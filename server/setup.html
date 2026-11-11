@@ -58,6 +58,11 @@
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const ago = ms => { if (!ms) return 'never'; const s = Math.round((Date.now() - ms) / 1000); return s < 60 ? s + ' s ago' : Math.round(s / 60) + ' min ago'; };
   const say = (t, cls) => { $('msg').className = 'msg ' + (cls || ''); $('msg').textContent = t; };
+  const cleanTok = s => String(s || '').trim()
+    .replace(/^.*(?:x-access-token|access_token|token|bearer)[:=\s]+/i, '')
+    .replace(/^["']|["'];?$/g, '')
+    .trim();
+  $('tok').addEventListener('paste', () => setTimeout(() => { $('tok').value = cleanTok($('tok').value); }, 0));
   async function refresh() {
     const s = await post('/api/status');
     $('st').innerHTML = `<dt>Status</dt><dd class="${s.lastError ? 'err' : s.ready ? 'ok' : ''}">${esc(!s.configured ? 'Not set up' : s.lastError || (s.ready ? 'Syncing' : 'Reading the chat…'))}</dd>
@@ -68,7 +73,9 @@
   }
   $('load').onclick = async () => {
     say('Checking…');
-    const r = await post('/api/groups', { token: $('tok').value });
+    const token = cleanTok($('tok').value);
+    $('tok').value = token;
+    const r = await post('/api/groups', { token });
     if (!r.ok) return say(r.error, 'err');
     $('grp').innerHTML = '<option value="">— pick the sync chat —</option>' + r.groups.map(g => `<option value="${esc(g.id)}">${esc(g.name)}</option>`).join('');
     say(`Token works — ${r.groups.length} chats.`, 'ok');
@@ -76,7 +83,8 @@
   $('save').onclick = async () => {
     const sel = $('grp');
     if (!sel.value) return say('Pick the sync chat first.', 'err');
-    const r = await post('/api/config', { token: $('tok').value, groupId: sel.value, groupName: sel.options[sel.selectedIndex].text });
+    const token = cleanTok($('tok').value);
+    const r = await post('/api/config', { token, groupId: sel.value, groupName: sel.options[sel.selectedIndex].text });
     if (r.ok === false) return say(r.error, 'err');
     $('tok').value = ''; say('Saved — reading tonight\'s rides from the chat.', 'ok'); refresh();
   };

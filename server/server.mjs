@@ -72,11 +72,17 @@ let outLines = []; // lines waiting to be posted (survive a restart)
 try { outLines = JSON.parse(fs.readFileSync(outFile, 'utf8')); } catch (e) { /* none */ }
 const saveOut = () => { fs.writeFileSync(outFile, JSON.stringify(outLines), { mode: 0o600 }); };
 
+const cleanTok = s => String(s || '').trim()
+  .replace(/^.*(?:x-access-token|access_token|token|bearer)[:=\s]+/i, '')
+  .replace(/^["']|["'];?$/g, '')
+  .trim();
+
 async function gm(pathname, opts = {}) {
-  if (!conf.token) throw new Error('No GroupMe token yet — open Settings ▸ GroupMe sync.');
+  const token = opts.token || conf.token;
+  if (!token) throw new Error('No GroupMe token yet — open Settings ▸ GroupMe sync.');
   const url = new URL(GM_API + pathname);
   Object.entries(opts.query || {}).forEach(([k, v]) => url.searchParams.set(k, v));
-  const res = await fetch(url, { method: opts.method || 'GET', headers: { 'X-Access-Token': opts.token || conf.token, 'Content-Type': 'application/json' },
+  const res = await fetch(url, { method: opts.method || 'GET', headers: { 'X-Access-Token': token, 'Content-Type': 'application/json' },
     body: opts.body ? JSON.stringify(opts.body) : undefined, signal: AbortSignal.timeout(20000) });
   if (res.status === 304) return null;
   if (res.status === 401) throw new Error('GroupMe refused the token (signed out? paste a new one).');
@@ -234,7 +240,7 @@ const server = http.createServer(async (req, res) => {
       }
       if (p === '/api/status') return send(res, 200, status());
       if (p === '/api/groups') { // check a token and list its chats
-        const token = String(body.token || conf.token || '').replace(/^.*X-Access-Token:\s*/i, '').trim();
+        const token = cleanTok(body.token || conf.token || '');
         if (!/^[A-Za-z0-9_-]{20,128}$/.test(token)) return send(res, 200, { ok: false, error: "That doesn't look like a GroupMe token." });
         try {
           const gs = await gm('/groups', { token, query: { per_page: 100, omit: 'memberships' } });
@@ -242,7 +248,7 @@ const server = http.createServer(async (req, res) => {
         } catch (e) { return send(res, 200, { ok: false, error: String(e.message || e) }); }
       }
       if (p === '/api/config') {
-        const token = String(body.token || conf.token || '').replace(/^.*X-Access-Token:\s*/i, '').trim();
+        const token = cleanTok(body.token || conf.token || '');
         if (body.off) { conf = {}; saveConf(conf); sync.ready = false; store.rides = {}; store.ver++; gas.clearCache(); return send(res, 200, status()); }
         if (!token || !body.groupId) return send(res, 200, { ok: false, error: 'Pick a chat.' });
         conf = { token, groupId: String(body.groupId), groupName: String(body.groupName || '') };

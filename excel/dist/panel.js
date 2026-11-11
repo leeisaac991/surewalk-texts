@@ -53,6 +53,10 @@
   const nowHM = () => { const w = SWP.austin(); return `${+w.slice(11, 13)}:${w.slice(14, 16)}`; };
   const hmToSerial = s => { const m = /^(\d{1,2}):(\d{2})$/.exec(s); return m ? (+m[1] * 60 + +m[2]) / 1440 : s; };
   const ampm = s => { const m = /^(\d{1,2}):(\d{2})/.exec(s || ''); return m ? `${(+m[1] + 11) % 12 + 1}:${m[2]}` : s; };
+  function wallMs(ts) {
+    const m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})(?::(\d{2}))?/.exec(ts || '');
+    return m ? Date.UTC(+m[1], m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)) : 0;
+  }
 
   /* ---------------- the sheet layout (found by header) ---------------- */
   const HEAD = [ // in this order: a header is used once (the pick-up header mentions "cancelled")
@@ -131,7 +135,6 @@
    * (same rule as the dispatch panel).
    */
   const painted = new Set(); // rides this panel colored itself (never 'copied')
-  const wallMs = w => { const m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})/.exec(w || ''); return m ? Date.UTC(+m[1], m[2] - 1, +m[3], +m[4], +m[5]) : 0; };
   async function clearCopiedColors(x) {
     const byRow = new Map(x.rides.map(r => [r.row, r])), now = wallMs(SWP.austin()), fixes = [];
     x.rides.forEach(r => {
@@ -343,10 +346,15 @@
   }
   // The sheet vs the chat: post what the chat doesn't know yet (new rides, changed cells).
   function diff() {
-    const lines = [];
+    const lines = [], nowMs = wallMs(SWP.austin());
     X.tonight.forEach(r => {
       const k = S.rides[r.id];
       if (!k) {
+        // At most send rides submitted up to 1 hour before: older rides are tracked locally without spamming chat
+        if (nowMs - wallMs(r.f.ts) > 60 * 60e3) {
+          SWP.fold(S, { e: 'ride', id: r.id, src: 'ignored', f: r.f });
+          return;
+        }
         const ev = { e: 'ride', id: r.id, src, f: r.f };
         lines.push(SWP.line(ev)); SWP.fold(S, ev);
         return;
@@ -354,6 +362,7 @@
       const ch = {};
       SWP.FIELDS.forEach(f => { if (f !== 'ts' && r.f[f] !== undefined && !SWP.same(f, r.f[f], k.f[f])) ch[f] = r.f[f]; });
       if (!Object.keys(ch).length) return;
+      if (k.src === 'ignored') { Object.assign(k.f, ch); return; }
       const ev = { e: 'upd', id: r.id, src, f: ch };
       lines.push(SWP.line(ev, k.f)); SWP.fold(S, ev);
     });
@@ -533,7 +542,11 @@
     $('setGrp').innerHTML = set.groupId ? `<option value="${esc(set.groupId)}">${esc(set.groupName)}</option>` : '<option value="">— load chats first —</option>';
     $('setSync').checked = !!set.sync; $('setMsg').textContent = '';
   }
-  const cleanTok = s => String(s || '').replace(/^.*X-Access-Token:\s*/i, '').trim();
+  const cleanTok = s => String(s || '').trim()
+    .replace(/^.*(?:x-access-token|access_token|token|bearer)[:=\s]+/i, '')
+    .replace(/^["']|["'];?$/g, '')
+    .trim();
+  $('setTok').addEventListener('paste', () => setTimeout(() => { $('setTok').value = cleanTok($('setTok').value); }, 0));
   $('setBtn').addEventListener('click', () => showSettings($('setCard').hidden));
   $('setClose').addEventListener('click', () => showSettings(false));
   $('setLoad').addEventListener('click', () => busyBtn($('setLoad'), async () => {

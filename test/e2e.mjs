@@ -123,6 +123,13 @@ await until(async () => (await sees()) === 3, 'panel posted tonight\'s 3 rides; 
 const evs = () => msgs.map(m => m.text).join('\n');
 ok(/‹sw1›\{"e":"ride","id":"f1"/.test(evs()), 'rides are keyed by the form Id');
 
+const groupsRes = await (await fetch(`http://127.0.0.1:${SPORT}/api/groups`, {
+  method: 'POST',
+  headers: { 'X-SW-Token': TOKEN, 'Content-Type': 'application/json' },
+  body: JSON.stringify({ token: '  Bearer "tok_' + 'c'.repeat(30) + '"  ' })
+})).json();
+ok(groupsRes.ok && groupsRes.groups && groupsRes.groups.length > 0, 'api/groups checks and cleans token without prior config');
+
 console.log('auto-text -> Call Time back in the sheet');
 const first = await until(async () => { const r = await bridge(); return r.outbox && r.outbox.length >= 2 && r.outbox; }, 'confirmations queued for Ava and Ben (Cara is cancelled)');
 ok(first && !first.some(o => o.to.endsWith('5550103')), 'no text to the cancelled ride');
@@ -169,6 +176,11 @@ await B.js(`__xl.row(6, ${JSON.stringify(ride(5, 0, 'Eli', 'Ford', '5125550105',
 await until(() => B.js(`__xl.bg(6,'A') === '#FFFFFF'`), 'copied red cleared from the new ride (row 5 above is our duplicate, kept red)');
 ok(await B.js(`__xl.bg(5,'A') === '#FF0000'`), 'our own duplicate stays red');
 await until(async () => { const r = await bridge(); return (r.outbox || []).some(o => o.to.endsWith('5550105')); }, 'the new ride gets its confirmation text');
+
+console.log('rides older than 1 hour are not synced');
+await B.js(`__xl.row(7, ${JSON.stringify(ride(99, 90, 'Old', 'Rider', '5125550199', 'PCL', 'Dobie'))})`);
+await sleep(2000);
+ok(!evs().includes('Old') && !evs().includes('5125550199'), 'rides older than 1 hour are not posted to GroupMe');
 
 console.log('a dispatcher edit wins over a stale server edit');
 await B.js(`__xl.type(3,'F','21:58')`); await sleep(1500);
