@@ -13,7 +13,7 @@ Excel rides sheet ── Excel panel (Script Lab) ──▶ GroupMe sync chat �
 | **Texting server** | `server/` | Runs on the texting computer. Reads the sync chat, runs the SURE Walk Texts texting code, serves the texting dashboard at **http://127.0.0.1:8787**, and is the phone bridge's endpoint. |
 | Sync protocol | `protocol.js` | One line per ride event in the chat (shared by both sides). |
 
-**Snippet (public gist):** see the link in the latest PR / release notes — Script Lab ▸ Import ▸ paste the gist link.
+**Snippet (public gist):** https://gist.github.com/leeisaac991/a38e032d2f024ab5d517cb409ba06414 (Script Lab ▸ Import ▸ paste the link)
 
 ## Privacy
 - The sync chat only carries what the sheet holds (time, name, phone, pick-up, drop-off, ADA, dispatcher, call /
