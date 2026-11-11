@@ -29,11 +29,19 @@ Excel rides sheet ── Excel panel (Script Lab) ──▶ GroupMe sync chat �
 Make a GroupMe chat just for this (e.g. "SURE Walk Texts sync") with the accounts that need it.
 
 ### 2. The Excel panel (one dispatcher's browser)
+
+#### Option A: Real Add-in (Home ▸ Texts button — no Script Lab needed)
+1. In Excel on the web, open the rides workbook.
+2. **Home ▸ Add-ins ▸ More Add-ins ▸ My Add-ins ▸ Upload My Add-in** ▸ select `manifest.xml`.
+3. A **SURE Walk ▸ Texts** button appears on the **Home** tab ribbon. Click it to open the panel.
+4. **⚙ Settings**: your name, the rides tab if it isn't the first tab, the GroupMe token ▸ **Check & load chats** ▸ pick the sync chat ▸ turn on **Sync rides with the texting computer** ▸ **Save**.
+   Turn sync on in **one** panel at a time (others can still use the buttons with sync off).
+
+#### Option B: Script Lab snippet
 1. Excel on the web ▸ open the rides workbook ▸ **Home ▸ Add-ins** ▸ add **Script Lab**.
 2. **Script Lab ▸ Code ▸ ☰ ▸ Import** ▸ paste the gist link ▸ **Import** ▸ **Run**.
 3. **⚙**: your name, the rides tab if it isn't the first tab, the GroupMe token ▸ **Check & load chats** ▸ pick the
    sync chat ▸ turn on **Sync rides with the texting computer** ▸ **Save**.
-   Turn sync on in **one** panel at a time (others can still use the buttons with sync off).
 
 ### 3. The texting computer
 ```
