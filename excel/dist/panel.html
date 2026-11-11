@@ -1,0 +1,109 @@
+<style>
+  :root { --bg: #f5f5f7; --card: #fff; --text: #1d1d1f; --muted: #6e6e73; --line: #e3e3e8; --accent: #bf5700; --accent-soft: #fbeee4;
+    --ok: #2e7d32; --ok-soft: #e8f5e9; --bad: #c62828; --bad-soft: #fdecea; --warn: #b26a00; --warn-soft: #fff4e0; --info: #1565c0; --info-soft: #e8f0fd; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #1c1c1e; --card: #2c2c2e; --text: #f5f5f7; --muted: #a1a1a6; --line: #3a3a3c;
+    --accent: #ff8a3d; --accent-soft: #3d2a1c; --ok: #66bb6a; --ok-soft: #1f3322; --bad: #ef5350; --bad-soft: #3b1f1f; --warn: #ffb74d; --warn-soft: #3a2e1a; --info: #64b5f6; --info-soft: #1b2a3d; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 "Segoe UI", system-ui, sans-serif; }
+  button, input, select { font: inherit; color: inherit; }
+  .bar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 12px; background: var(--accent); color: #fff; font-weight: 600; }
+  .bar .sp { flex: 1; }
+  .bar button { border: 0; background: rgba(255,255,255,.18); color: #fff; border-radius: 99px; padding: 3px 10px; cursor: pointer; font-size: 12px; font-weight: 600; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #bbb; display: inline-block; }
+  .sync { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; opacity: .95; max-width: 55vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  main { padding: 10px; display: grid; gap: 10px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+  .muted { color: var(--muted); } .small { font-size: 12px; }
+  h2 { font-size: 15px; margin: 0; }
+  .who { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .route { margin: 6px 0 8px; font-size: 14px; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  .chip { font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 99px; background: var(--bg); color: var(--muted); border: 1px solid var(--line); }
+  .chip.ok { background: var(--ok-soft); color: var(--ok); border-color: transparent; }
+  .chip.bad { background: var(--bad-soft); color: var(--bad); border-color: transparent; }
+  .chip.warn { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
+  .chip.info { background: var(--info-soft); color: var(--info); border-color: transparent; }
+  .chip.dark { background: #1d1d1f; color: #fff; border-color: transparent; }
+  .acts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .btn { border: 1px solid var(--line); background: var(--card); border-radius: 10px; padding: 8px 10px; cursor: pointer; font-weight: 600; text-align: left; }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn.danger { color: var(--bad); }
+  .btn.wide { grid-column: 1 / -1; }
+  .btn.busy { opacity: .6; pointer-events: none; }
+  .form { display: grid; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
+  .form label { display: grid; gap: 4px; font-size: 12px; font-weight: 600; color: var(--muted); }
+  .form input, .form select, .set input, .set select { width: 100%; padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+  .row2 { display: flex; gap: 6px; } .row2 > * { flex: 1; }
+  .empty { text-align: center; padding: 18px 8px; }
+  .tools { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; }
+  .tools input { flex: 1; padding: 6px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); min-width: 0; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 99px; overflow: hidden; flex: none; }
+  .seg button { border: 0; background: transparent; padding: 4px 10px; cursor: pointer; font-size: 12px; font-weight: 600; color: var(--muted); }
+  .seg button.on { background: var(--accent); color: #fff; }
+  .list { display: grid; gap: 2px; max-height: 46vh; overflow: auto; }
+  .ride { display: grid; grid-template-columns: 52px 1fr auto; gap: 8px; align-items: center; padding: 6px 6px; border-radius: 8px; cursor: pointer; border: 1px solid transparent; }
+  .ride:hover { background: var(--bg); }
+  .ride.sel { border-color: var(--accent); background: var(--accent-soft); }
+  .ride .t { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12px; }
+  .ride .n { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ride .r { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ride.done .n { color: var(--muted); font-weight: 500; }
+  .feed { display: grid; gap: 4px; font-size: 12px; max-height: 160px; overflow: auto; }
+  .feed div { display: flex; gap: 6px; } .feed .tm { color: var(--muted); flex: none; font-variant-numeric: tabular-nums; }
+  .feed .bad { color: var(--bad); }
+  .set { display: grid; gap: 10px; }
+  .set label { display: grid; gap: 4px; font-size: 12px; font-weight: 600; color: var(--muted); }
+  .sw { display: flex !important; grid-template-columns: none; align-items: center; justify-content: space-between; gap: 10px; color: var(--text) !important; font-size: 13px !important; }
+  .sw input { width: auto; }
+  .toast { position: fixed; left: 10px; right: 10px; bottom: 10px; background: #1d1d1f; color: #fff; padding: 9px 12px; border-radius: 10px; font-size: 13px; z-index: 9; display: flex; gap: 10px; align-items: center; }
+  .toast button { border: 0; background: transparent; color: #ffb27a; font-weight: 700; cursor: pointer; }
+  .err { color: var(--bad); }
+  [hidden] { display: none !important; }
+</style>
+
+<div class="bar">
+  <span>SURE Walk Texts</span><span class="sp"></span>
+  <span class="sync" id="syncLbl" title="GroupMe sync"><span class="dot" id="syncDot"></span><span id="syncTxt">Sync off</span></span>
+  <button id="setBtn" title="Settings">⚙</button>
+</div>
+
+<main>
+  <section class="card" id="setCard" hidden>
+    <div class="set">
+      <h2>Settings</h2>
+      <label>Your name (goes in Dispatcher when you mark a ride called)<input id="setName" placeholder="F. Lastname"></label>
+      <label class="sw">Put my name in Dispatcher when I mark called<input type="checkbox" id="setDispName"></label>
+      <label>Rides tab (blank = first tab)<input id="setTab" placeholder="Sheet1"></label>
+      <h2 style="margin-top:6px">GroupMe sync</h2>
+      <div class="small muted">Posts new rides and changes to one GroupMe chat. The texting computer reads that chat, texts riders, and sends back Call Times, cancels, duplicates and pick-up / drop-off fixes, which this panel writes into the sheet. Turn it on in <b>one</b> dispatcher's panel.</div>
+      <label>GroupMe token<input id="setTok" type="password" autocomplete="off" placeholder="X-Access-Token from web.groupme.com"></label>
+      <div class="row2"><button class="btn" id="setLoad">Check &amp; load chats</button></div>
+      <label>Sync chat<select id="setGrp"><option value="">— load chats first —</option></select></label>
+      <label class="sw">Sync rides with the texting computer<input type="checkbox" id="setSync"></label>
+      <div class="small" id="setMsg" role="status"></div>
+      <div class="row2"><button class="btn primary" id="setSave">Save</button><button class="btn" id="setClose">Close</button></div>
+    </div>
+  </section>
+
+  <section class="card" id="selCard">
+    <div class="empty muted" id="selEmpty">Click a ride's row in the sheet (or pick one below).</div>
+    <div id="selRide" hidden></div>
+  </section>
+
+  <section class="card">
+    <div class="tools">
+      <input id="q" type="search" placeholder="Search name, phone, place">
+      <div class="seg" role="tablist"><button data-f="open" class="on">Open</button><button data-f="all">All</button></div>
+    </div>
+    <div class="list" id="list"></div>
+    <div class="small muted" id="listNote" style="margin-top:6px"></div>
+  </section>
+
+  <section class="card">
+    <h2 style="margin-bottom:6px">Activity</h2>
+    <div class="feed" id="feed"><div class="muted">Nothing yet.</div></div>
+  </section>
+</main>
+<div class="toast" id="toast" hidden><span id="toastTxt"></span><span style="flex:1"></span><button id="toastUndo" hidden>Undo</button></div>

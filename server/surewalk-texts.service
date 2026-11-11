@@ -1,0 +1,16 @@
+# systemd --user unit for the SURE Walk Texts server.
+# Install: cp surewalk-texts.service ~/.config/systemd/user/ && systemctl --user daemon-reload
+# Start for a shift: systemctl --user start surewalk-texts    Stop: systemctl --user stop surewalk-texts
+# Logs: journalctl --user -u surewalk-texts -f
+[Unit]
+Description=SURE Walk Texts server (dashboard on http://127.0.0.1:8787, GroupMe sync, phone bridge endpoint)
+After=network-online.target
+
+[Service]
+Environment=TZ=America/Chicago
+ExecStart=/usr/bin/node %h/Documents/surewalk/texts-panel/server/server.mjs
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
