@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GroupMe Sync</title>
+<style>
+  :root { --bg: #f5f5f7; --card: #fff; --text: #1d1d1f; --muted: #6e6e73; --line: #e0e0e5; --accent: #bf5700; --ok: #2e7d32; --bad: #c62828; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #1c1c1e; --card: #2c2c2e; --text: #f5f5f7; --muted: #a1a1a6; --line: #3a3a3c; --accent: #ff8a3d; --ok: #66bb6a; --bad: #ef5350; } }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 "Segoe UI", system-ui, sans-serif; }
+  main { max-width: 560px; margin: 0 auto; padding: 24px 16px; }
+  h1 { font-size: 20px; margin: 0 0 4px; } p { color: var(--muted); margin: 0 0 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 14px; }
+  label { display: grid; gap: 6px; font-weight: 600; font-size: 13px; margin-bottom: 12px; }
+  input, select { font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); width: 100%; box-sizing: border-box; }
+  button { font: 600 14px "Segoe UI", system-ui, sans-serif; border: 0; border-radius: 99px; padding: 8px 16px; background: var(--accent); color: #fff; cursor: pointer; }
+  button.ghost { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .msg { font-size: 13px; margin-top: 10px; } .err { color: var(--bad); } .ok { color: var(--ok); }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; font-size: 14px; } dt { color: var(--muted); }
+  ul { padding-left: 18px; color: var(--muted); font-size: 13px; margin: 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>GroupMe sync</h1>
+  <p>New rides come from the Excel sheet through one GroupMe chat. Changes made here (Call Time, cancels, duplicates,
+    pick-up / drop-off fixes) go back to the sheet through the same chat. Texts with riders never go there.</p>
+
+  <div class="card">
+    <dl id="st"><dt>Status</dt><dd>…</dd></dl>
+  </div>
+
+  <div class="card">
+    <label>GroupMe token
+      <input id="tok" type="password" autocomplete="off" placeholder="Paste your token (web.groupme.com ▸ F12 ▸ Network ▸ X-Access-Token)">
+    </label>
+    <div class="row"><button class="ghost" id="load">Check & load chats</button></div>
+    <label style="margin-top:12px">Sync chat (the same one picked in the Excel panel's Settings)
+      <select id="grp"><option value="">— load chats first —</option></select>
+    </label>
+    <div class="row"><button id="save">Save & start syncing</button><button class="ghost" id="off">Stop syncing</button></div>
+    <div id="msg" class="msg" role="status"></div>
+  </div>
+
+  <div class="card">
+    <ul>
+      <li>Use a chat made only for this (for example "SURE Walk Texts sync"), with only the people who need it.</li>
+      <li>The token stays on this computer (~/.config/surewalk-texts, readable only by you).</li>
+      <li><a href="/">Back to the texting dashboard</a></li>
+    </ul>
+  </div>
+</main>
+<script>
+  const TOKEN = '__TOKEN__';
+  const $ = id => document.getElementById(id);
+  const post = (u, b) => fetch(u, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-SW-Token': TOKEN }, body: JSON.stringify(b || {}) }).then(r => r.json());
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const ago = ms => { if (!ms) return 'never'; const s = Math.round((Date.now() - ms) / 1000); return s < 60 ? s + ' s ago' : Math.round(s / 60) + ' min ago'; };
+  const say = (t, cls) => { $('msg').className = 'msg ' + (cls || ''); $('msg').textContent = t; };
+  async function refresh() {
+    const s = await post('/api/status');
+    $('st').innerHTML = `<dt>Status</dt><dd class="${s.lastError ? 'err' : s.ready ? 'ok' : ''}">${esc(!s.configured ? 'Not set up' : s.lastError || (s.ready ? 'Syncing' : 'Reading the chat…'))}</dd>
+      <dt>Chat</dt><dd>${esc(s.group || '—')}</dd><dt>Tonight's rides</dt><dd>${s.rides}</dd>
+      <dt>Last from Excel</dt><dd>${ago(s.lastExcelAt)}</dd><dt>Checked</dt><dd>${ago(s.lastPollAt)}</dd>
+      <dt>Waiting to post</dt><dd>${s.waiting}</dd>`;
+    if (s.groupId && !$('grp').value) $('grp').innerHTML = `<option value="${esc(s.groupId)}">${esc(s.group)}</option>`;
+  }
+  $('load').onclick = async () => {
+    say('Checking…');
+    const r = await post('/api/groups', { token: $('tok').value });
+    if (!r.ok) return say(r.error, 'err');
+    $('grp').innerHTML = '<option value="">— pick the sync chat —</option>' + r.groups.map(g => `<option value="${esc(g.id)}">${esc(g.name)}</option>`).join('');
+    say(`Token works — ${r.groups.length} chats.`, 'ok');
+  };
+  $('save').onclick = async () => {
+    const sel = $('grp');
+    if (!sel.value) return say('Pick the sync chat first.', 'err');
+    const r = await post('/api/config', { token: $('tok').value, groupId: sel.value, groupName: sel.options[sel.selectedIndex].text });
+    if (r.ok === false) return say(r.error, 'err');
+    $('tok').value = ''; say('Saved — reading tonight\'s rides from the chat.', 'ok'); refresh();
+  };
+  $('off').onclick = async () => { if (!confirm('Stop syncing and forget the token on this computer?')) return; await post('/api/config', { off: true }); say('Stopped.'); refresh(); };
+  refresh(); setInterval(refresh, 4000);
+</script>
+</body>
+</html>
