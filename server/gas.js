@@ -14,7 +14,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-const LOG_ID = 'local-log';
+const LOG_ID = 'local-log', POLL_ID = 'local-poll';
 const W = 23; // A:W of the old Google sheet layout (CFG.LAST_COL)
 // old-layout column -> sync field (protocol.js)
 const COLS = { 1: 'ts', 2: 'disp', 3: 'call', 4: 'arr', 7: 'last', 8: 'first', 9: 'phone', 10: 'pu', 11: 'do', 12: 'ada',
@@ -97,6 +97,31 @@ function install(stateDir, store) {
   });
   const logBook = { getId: () => LOG_ID, getSheets: () => [logSheet], getSheetByName: n => (n === 'Messages' ? logSheet : null), getUrl: () => '/log.csv' };
 
+  /* ---------- the poll answers (SpreadsheetApp.create('SURE Walk Poll')): a local file, rows by index ---------- */
+  const pollFile = path.join(stateDir, 'poll.json');
+  const pollRows = () => { try { return JSON.parse(fs.readFileSync(pollFile, 'utf8')); } catch (e) { return []; } };
+  const pollSheet = chain({
+    getName: () => 'Answers', setName() { return pollSheet; }, setFrozenRows() { return pollSheet; },
+    getLastRow: () => pollRows().length,
+    getRange(row, col, n, w) {
+      return chain({
+        self: null,
+        setValues(vals) {
+          const all = pollRows();
+          vals.forEach((line, i) => {
+            const r = row - 1 + i;
+            while (all.length <= r) all.push([]);
+            line.forEach((v, j) => { all[r][col - 1 + j] = v instanceof Date ? v.toISOString() : v; });
+          });
+          write(pollFile, JSON.stringify(all));
+          return this;
+        },
+        getValues() { return pollRows().slice(row - 1, row - 1 + (n || 1)).map(l => { const o = []; for (let j = 0; j < (w || 1); j++) o.push(l[col - 1 + j] == null ? '' : l[col - 1 + j]); return o; }); },
+      });
+    },
+  });
+  const pollBook = { getId: () => POLL_ID, getSheets: () => [pollSheet], getSheetByName: n => (n === 'Answers' ? pollSheet : null), getUrl: () => '/poll.csv' };
+
   /* ---------- the master sheet: a virtual sheet over the synced rides ---------- */
   let changes = []; // { id, k, was, now }
   let layout = null, layoutVer = -1;
@@ -166,13 +191,14 @@ function install(stateDir, store) {
   const masterBook = { getId: () => 'excel', getSheets: () => [master], getSheetByName: () => master };
 
   global.SpreadsheetApp = {
-    openById: id => (id === LOG_ID ? logBook : masterBook),
-    create: () => logBook,
+    openById: id => (id === LOG_ID ? logBook : id === POLL_ID ? pollBook : masterBook),
+    create: name => (/poll/i.test(String(name)) ? pollBook : logBook),
     flush() {},
   };
 
   return {
     LOG_ID,
+    pollRows,
     /** The sheet edits the texting code made since the last call, merged per ride + field. */
     takeChanges() {
       const by = new Map();
