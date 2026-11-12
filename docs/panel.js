@@ -60,7 +60,7 @@
 
   /* ---------------- the sheet layout (found by header) ---------------- */
   const HEAD = [ // in this order: a header is used once (the pick-up header mentions "cancelled")
-    ['id', /^id$/], ['ts', /^(form submitted|timestamp|completion time)/], ['disp', /^dispatch/], ['call', /^call time/], ['arr', /^arrival/],
+    ['id', /^id$/], ['ts', /^(form submitted|timestamp|completion time)/], ['date', /^date$/], ['stime', /^(submitted time|time submitted)$/], ['disp', /^dispatch/], ['call', /^call time/], ['arr', /^arrival/],
     ['last', /^last name/], ['first', /^first name/], ['phone', /^phone/], ['pu', /^pick ?-?up/], ['do', /^drop ?-?off/],
     ['ada', /disabilit|^ada\b/], ['loc', /^location$/], ['van', /^(van|vehicle)/], ['drv', /^driver$/], ['nav', /^navigator$/],
     ['rsn', /^reason/], ['rsn', /cancel/],
@@ -69,10 +69,25 @@
     const h = header.map(x => String(x || '').toLowerCase().replace(/[^a-z0-9 -]/g, ' ').replace(/\s+/g, ' ').trim());
     const col = {}, used = new Set();
     HEAD.forEach(([k, re]) => { if (col[k]) return; const i = h.findIndex((x, j) => re.test(x) && !used.has(j)); if (i >= 0) { col[k] = i + 1; used.add(i); } });
-    const need = { ts: 'Form Submitted', first: 'First Name', phone: 'Phone', pu: 'Pick-up', do: 'Drop-off', call: 'Call Time' };
+    // the ride's time: one timestamp column (older layouts), or Date + Submitted Time (Nov 2026 layout)
+    if (!col.ts && !(col.date && col.stime)) col.ts = 0;
+    const need = { first: 'First Name', phone: 'Phone', pu: 'Pick-up', do: 'Drop-off', call: 'Call Time' };
     const missing = Object.keys(need).filter(k => !col[k]).map(k => need[k]);
+    if (col.ts === 0) { delete col.ts; missing.unshift('Date + Submitted Time'); }
     if (missing.length) throw new Error(`Can't find these columns in row 1 of this tab: ${missing.join(', ')}. Pick the rides tab in ⚙ Settings.`);
     return col;
+  }
+  // A ride's submit time as Austin wall clock "YYYY-MM-DD HH:MM:SS", or '' when the row isn't a ride.
+  function rowTs(col, v, t) {
+    if (col.ts) { const x = v[col.ts - 1]; return typeof x === 'number' && x > 1 ? serialToWall(x) : textToWall(t[col.ts - 1]); }
+    const dv = v[col.date - 1], dt = String(t[col.date - 1] == null ? '' : t[col.date - 1]).trim();
+    let day = '';
+    if (typeof dv === 'number' && dv > 1) day = serialToWall(Math.floor(dv)).slice(0, 10);
+    else { const m = /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/.exec(dt) || /^(\d{4})-(\d{2})-(\d{2})$/.exec(dt);
+      if (m) day = m[1].length === 4 ? `${m[1]}-${m[2]}-${m[3]}` : `${m[3].length === 2 ? '20' + m[3] : m[3]}-${pad(m[1])}-${pad(m[2])}`; }
+    const tm = hm(v[col.stime - 1], t[col.stime - 1]), mt = /^(\d{1,2}):(\d{2})$/.exec(tm);
+    if (!day || !mt || +mt[1] > 23) return '';
+    return `${day} ${pad(mt[1])}:${mt[2]}:00`;
   }
   const letter = n => { let s = ''; while (n) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; };
   const RIDE_FIELDS = ['first', 'last', 'phone', 'pu', 'do', 'ada', 'disp', 'call', 'arr', 'loc', 'van', 'drv', 'nav', 'rsn'];
@@ -100,12 +115,12 @@
       rg.load('values,text');
       const props = rg.getCellProperties({ format: { fill: { color: true }, font: { color: true } } });
       await ctx.sync();
-      const rideCols = ['ts', 'first', 'last', 'phone', 'pu', 'do'].map(k => col[k]).filter(Boolean);
+      const rideCols = ['ts', 'date', 'stime', 'first', 'last', 'phone', 'pu', 'do'].map(k => col[k]).filter(Boolean);
       const rides = [];
       for (let i = 0; i < rg.values.length; i++) {
         const v = rg.values[i], t = rg.text[i], cells = props.value[i].map(c => ({ bg: String((c.format.fill && c.format.fill.color) || '#ffffff').toLowerCase() }));
-        const tsv = v[col.ts - 1], ts = typeof tsv === 'number' && tsv > 1 ? serialToWall(tsv) : textToWall(t[col.ts - 1]);
-        if (!ts) continue; // not a ride (blank, or the shift roster below the rides)
+        const ts = rowTs(col, v, t);
+        if (!ts) continue; // not a ride (blank, or a roster below the rides in older layouts)
         const get = k => (col[k] ? String(t[col[k] - 1] == null ? '' : t[col[k] - 1]).trim() : '');
         const f = { ts, row: String(top + i) };
         RIDE_FIELDS.forEach(k => { f[k] = get(k); });
