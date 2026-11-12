@@ -185,7 +185,10 @@ function rpc(name, args) {
   }
   if (!sync.ready && name === 'getState' && conf.groupId) { /* still reading the chat: show what we have */ }
   const out = run(() => globalThis[name](...(Array.isArray(args) ? args : [])));
-  if (out && typeof out === 'object' && 'sheetUrl' in out) out.sheetUrl = '/log.csv';
+  if (out && typeof out === 'object') {
+    if ('sheetUrl' in out) out.sheetUrl = '/log.csv';
+    if ('pollUrl' in out) out.pollUrl = '/poll.csv';
+  }
   return out;
 }
 
