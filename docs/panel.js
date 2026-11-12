@@ -562,6 +562,8 @@
     .replace(/^["']|["'];?$/g, '')
     .trim();
   $('setTok').addEventListener('paste', () => setTimeout(() => { $('setTok').value = cleanTok($('setTok').value); }, 0));
+  const restartBtn = $('restartBtn');
+  if (restartBtn) restartBtn.addEventListener('click', () => location.reload());
   $('setBtn').addEventListener('click', () => showSettings($('setCard').hidden));
   $('setClose').addEventListener('click', () => showSettings(false));
   $('setLoad').addEventListener('click', () => busyBtn($('setLoad'), async () => {

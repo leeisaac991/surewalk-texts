@@ -88,7 +88,7 @@ ${click ? `setTimeout(() => { __xl.click(${+click}); setTimeout(() => document.q
 async function browser() {
   const prof = path.join(TMP, 'chrome');
   const bin = ['chromium-browser', 'chromium', 'google-chrome'].map(b => '/usr/bin/' + b).find(b => fs.existsSync(b));
-  const ch = spawn(bin, ['--headless=new', '--password-store=basic', `--user-data-dir=${prof}`, `--remote-debugging-port=${CPORT}`, '--no-first-run', `http://127.0.0.1:${GPORT}/panel`], { stdio: 'ignore' });
+  const ch = spawn(bin, ['--headless=new', '--no-sandbox', '--password-store=basic', `--user-data-dir=${prof}`, `--remote-debugging-port=${CPORT}`, '--no-first-run', `http://127.0.0.1:${GPORT}/panel`], { stdio: 'ignore' });
   let ws;
   for (let i = 0; i < 50 && !ws; i++) {
     await sleep(200);
@@ -131,6 +131,7 @@ await rpc('setToggle', 'TX_AUTOTEXT', true); // before any ride arrives (rides s
 const B = await browser();
 const sees = async () => (await rpc('getState')).rides.length;
 await until(async () => (await sees()) === 3, 'panel posted tonight\'s 3 rides; the texting server sees them');
+ok(await B.js("!!document.getElementById('restartBtn')"), 'restart button present in the bar');
 const evs = () => msgs.map(m => m.text).join('\n');
 ok(/‹sw1›\{"e":"ride","id":"f1"/.test(evs()), 'rides are keyed by the form Id');
 

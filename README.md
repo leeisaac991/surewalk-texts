@@ -37,6 +37,8 @@ Make a GroupMe chat just for this (e.g. "SURE Walk Texts sync") with the account
 4. **⚙ Settings**: your name, the rides tab if it isn't the first tab, the GroupMe token ▸ **Check & load chats** ▸ pick the sync chat ▸ turn on **Sync rides with the texting computer** ▸ **Save**.
    Turn sync on in **one** panel at a time (others can still use the buttons with sync off).
 
+The add-in loads the newest panel from the site (`docs/`) each time it opens or restarts (**↻ Restart**).
+
 #### Option B: Script Lab snippet
 1. Excel on the web ▸ open the rides workbook ▸ **Home ▸ Add-ins** ▸ add **Script Lab**.
 2. **Script Lab ▸ Code ▸ ☰ ▸ Import** ▸ paste the gist link ▸ **Import** ▸ **Run**.
