@@ -237,6 +237,25 @@ else {
   ok(csv.includes('more vans please'), '/poll.csv downloads the answers');
 }
 
+console.log('🧪 test poll & test text via RPC');
+await rpc('sendToNumber', '5125558888', 'Hello tester!');
+const testTxt = await until(async () => {
+  const r = await bridge();
+  return (r.outbox || []).find(o => o.to.endsWith('5558888'));
+}, 'sendToNumber queued test text to 5125558888');
+ok(testTxt && testTxt.body === 'Hello tester!', 'test text sent with correct body');
+await bridge([], testTxt ? [{ outId: testTxt.outId, status: 'sent' }] : []);
+
+await rpc('sendTestPoll', '5125559999');
+const testPollMsg = await until(async () => {
+  const r = await bridge();
+  return (r.outbox || []).find(o => o.to.endsWith('5559999'));
+}, 'sendTestPoll queued question 1 to 5125559999');
+ok(testPollMsg && /1\/3/.test(testPollMsg.body), 'test poll message contains 1/3');
+await bridge([], testPollMsg ? [{ outId: testPollMsg.outId, status: 'sent' }] : []);
+const q1Reply = await bridge([{ id: 'tp1', from: '+15125559999', text: '1', ts: NOW + 120e3 }]);
+ok((q1Reply.outbox || []).some(o => o.to.endsWith('5559999') && /2\/3/.test(o.body)), 'replying 1 to test poll gets question 2/3');
+
 console.log('privacy');
 const all = evs();
 ok(!/Reply YES|SURE Walk got your ride|your ride is cancelled/i.test(all), 'no text-message content in the chat');
@@ -253,6 +272,7 @@ if (process.env.SHOTS) {
   await shot(`http://127.0.0.1:${SPORT}/setup`, process.env.SHOTS + '/setup.png', 800, 800);
 }
 B.close(); S.p.kill(); gm.close();
+await sleep(300);
 if (fails) console.log(S.out().split('\n').slice(-40).join('\n'));
 console.log(`\n${passes} passed, ${fails} failed`);
 process.exit(fails ? 1 : 0);

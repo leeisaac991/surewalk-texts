@@ -285,6 +285,32 @@ loadCode();
 ensureSetup();
 const cmd = process.argv[2];
 if (cmd === 'link-bridge') { linkBridge(); process.exit(0); }
+if (cmd === 'test-poll') {
+  const num = process.argv[3];
+  if (!num) { console.error('Usage: node server/server.mjs test-poll <phone-number>'); process.exit(1); }
+  try {
+    run(() => globalThis.sendTestPoll(num));
+    gas.flush();
+    console.log(`✓ Test poll (1/3) queued to ${num}. Reply to test the conversation!`);
+    process.exit(0);
+  } catch (e) {
+    console.error('Error:', e.message);
+    process.exit(1);
+  }
+}
+if (cmd === 'test-text') {
+  const num = process.argv[3], msg = process.argv.slice(4).join(' ') || 'SURE Walk Texts test ✔';
+  if (!num) { console.error('Usage: node server/server.mjs test-text <phone-number> [message]'); process.exit(1); }
+  try {
+    run(() => globalThis.sendToNumber(num, msg));
+    gas.flush();
+    console.log(`✓ Test text queued to ${num}: "${msg}"`);
+    process.exit(0);
+  } catch (e) {
+    console.error('Error:', e.message);
+    process.exit(1);
+  }
+}
 server.listen(PORT, '127.0.0.1', () => {
   log(`SURE Walk Texts: http://127.0.0.1:${PORT}  (log + settings in ${STATE})`);
   if (!conf.groupId) log('GroupMe sync chat not set yet: open the dashboard ▸ GroupMe sync.');
