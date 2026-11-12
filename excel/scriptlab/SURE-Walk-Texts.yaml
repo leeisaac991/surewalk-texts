@@ -1,12 +1,12 @@
 name: SURE Walk Texts
-description: SURE Walk texting / calling panel for the rides workbook (mark called, cancel, duplicate, places, GroupMe sync). Build bc0a4cc.
+description: SURE Walk texting / calling panel for the rides workbook (mark called, cancel, duplicate, places, GroupMe sync). Build 9c93850.
 host: EXCEL
 api_set: {}
 script:
   content: |
     // @ts-nocheck
-    // Loads the panel from github.com/leeisaac991/surewalk-texts (folder excel/dist, commit bc0a4cc). Nothing to edit here.
-    const BASE = "https://cdn.jsdelivr.net/gh/leeisaac991/surewalk-texts@bc0a4cc00586ee0858e835e3ef7772bb2a548eba/excel/dist/";
+    // Loads the panel from github.com/leeisaac991/surewalk-texts (folder excel/dist, commit 9c93850). Nothing to edit here.
+    const BASE = "https://cdn.jsdelivr.net/gh/leeisaac991/surewalk-texts@9c938504d28e6da1868fb80bd8fb8d63e96c0ab8/excel/dist/";
     document.body.innerHTML = '<div style="font:14px Segoe UI,system-ui,sans-serif;padding:24px;color:#6e6e73">Loading SURE Walk Texts…</div>';
     Promise.all(["panel.html", "protocol.js", "panel.js"].map(f =>
       fetch(BASE + f).then(r => { if (!r.ok) throw new Error(f + " (" + r.status + ")"); return r.text(); })))
