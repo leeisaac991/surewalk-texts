@@ -45,19 +45,30 @@ const gm = http.createServer(async (req, res) => {
 });
 
 /* ---------- the Excel panel page on a fake sheet ---------- */
-const HEADER = ['Id', 'Start time', 'Form Submitted', 'Time Submitted', 'Dispatcher', 'Call Time', 'Arrival Time', 'Wait Time', 'UT EID', 'Last Name:', 'First Name:',
-  'Phone number. Only submit using numeric digits', 'Pick-up Location (UT PROPERTY ONLY) Non UT property will be cancelled automatically:', 'Drop-off Location Building or Apartment name:',
-  'Do you require Americans with Disabilities Act assistance?', 'Location', 'Vehicle Type', 'Driver', 'Navigator', 'Agree 1', 'Agree 2', 'Agree 3', 'Email Address:', 'Reason for Cancellation', 'Notes'];
-const wall = minAgo => { const d = new Date(NOW - 6 * 3600e3 - minAgo * 60e3); return `${d.getUTCMonth() + 1}/${d.getUTCDate()}/${d.getUTCFullYear()} ${d.getUTCHours()}:${String(d.getUTCMinutes()).padStart(2, '0')}`; };
+// LAYOUT=nov (default): the Nov 2026 rides tab (Date + Submitted Time, no combined timestamp); LAYOUT=old: Form Submitted.
+const LAYOUT = process.env.LAYOUT || 'nov';
+const COLS_OLD = ['Id', 'Start time', 'Form Submitted', 'Time Submitted', 'Dispatcher', 'Call Time', 'Arrival Time', 'Wait Time', 'UT EID', 'Last Name:', 'First Name:'];
+const COLS_NOV = ['Id', 'Date', 'Submitted Time', 'Dispatcher', 'Call Time', 'Arrival Time', 'Wait Time', 'UT EID (if a visitor, use N/A) :', 'Last Name:', 'First Name:'];
+const HEADER = (LAYOUT === 'old' ? COLS_OLD : COLS_NOV).concat(['Phone number. Only submit using numeric digits', 'Pick-up Location (UT PROPERTY ONLY) Non UT property will be cancelled automatically:', 'Drop-off Location Building or Apartment name:',
+  'Do you require Americans with Disabilities Act assistance?', 'Location', 'Vehicle Type', 'Driver', 'Navigator', 'Agree 1', 'Agree 2', 'Agree 3', 'Email Address:', 'Reason for Cancellation', 'Notes']);
+const idx = re => HEADER.findIndex(h => re.test(h));
+const L = n => String.fromCharCode(65 + n);
+const C = { call: L(idx(/^Call Time/)), disp: L(idx(/^Dispatcher/)), rsn: L(idx(/^Reason/)), pu: L(idx(/^Pick-up/)), do: L(idx(/^Drop-off/)), first: L(idx(/^First Name/)) };
+const wallParts = minAgo => { const d = new Date(NOW - 6 * 3600e3 - minAgo * 60e3); return [`${d.getUTCMonth() + 1}/${d.getUTCDate()}/${d.getUTCFullYear()}`, `${d.getUTCHours()}:${String(d.getUTCMinutes()).padStart(2, '0')}`]; };
+const wall = minAgo => wallParts(minAgo).join(' ');
 const ride = (id, minAgo, first, last, phone, pu, dropoff, extra = {}) => {
-  const r = Array(HEADER.length).fill('');
-  Object.assign(r, { 0: String(id), 1: wall(minAgo + 1), 2: wall(minAgo), 9: last, 10: first, 11: phone, 12: pu, 13: dropoff, 14: 'No' }, extra);
+  const r = Array(HEADER.length).fill(''), put = (re, v) => { r[idx(re)] = v; };
+  put(/^Id$/, String(id));
+  if (LAYOUT === 'old') { put(/^Start time/, wall(minAgo + 1)); put(/^Form Submitted/, wall(minAgo)); }
+  else { const [d, t] = wallParts(minAgo); put(/^Date$/, d); put(/^Submitted Time/, t); }
+  put(/^Last Name/, last); put(/^First Name/, first); put(/^Phone/, phone); put(/^Pick-up/, pu); put(/^Drop-off/, dropoff); put(/^Do you require/, 'No');
+  if (extra.rsn) put(/^Reason/, extra.rsn);
   return r;
 };
 const SHEET = { rows: [HEADER,
   ride(1, 3, 'Ava', 'Stone', '5125550101', 'PCL', 'Jester West'),
   ride(2, 2, 'Ben', 'Ortiz', '5125550102', 'Kins', 'Duren'),
-  ride(3, 10, 'Cara', 'Wu', '5125550103', 'Gregory Gym', 'Dobie', { 23: 'Not Ready' }),
+  ride(3, 10, 'Cara', 'Wu', '5125550103', 'Gregory Gym', 'Dobie', { rsn: 'Not Ready' }),
 ], paint: [[4, '#000000', '#FFFFFF']] };
 function panelPage(click) {
   const html = fs.readFileSync(path.join(ROOT, 'excel/panel.html'), 'utf8');
@@ -134,11 +145,11 @@ console.log('auto-text -> Call Time back in the sheet');
 const first = await until(async () => { const r = await bridge(); return r.outbox && r.outbox.length >= 2 && r.outbox; }, 'confirmations queued for Ava and Ben (Cara is cancelled)');
 ok(first && !first.some(o => o.to.endsWith('5550103')), 'no text to the cancelled ride');
 await bridge([], (first || []).map(o => ({ outId: o.outId, status: 'sent' })));
-await until(() => B.js(`__xl.text(2,'F') === '22:00' && __xl.text(3,'F') === '22:00'`), 'Call Time 22:00 written into F2 and F3 by the panel');
+await until(() => B.js(`__xl.text(2,'${C.call}') === '22:00' && __xl.text(3,'${C.call}') === '22:00'`), 'Call Time 22:00 written into F2 and F3 by the panel');
 
 console.log('rider texts CANCEL -> row cancelled in the sheet');
 let res = await bridge([{ id: 'in1', from: '+15125550102', text: 'cancel', ts: NOW + 5000 }]);
-await until(() => B.js(`__xl.bg(3,'A') === '#000000' && __xl.text(3,'X') !== '' && __xl.text(3,'F') === ''`), 'row 3 black, reason in X, Call Time cleared');
+await until(() => B.js(`__xl.bg(3,'A') === '#000000' && __xl.text(3,'${C.rsn}') !== '' && __xl.text(3,'${C.call}') === ''`), 'row 3 black, reason in X, Call Time cleared');
 ok(/cancel/i.test(JSON.stringify(res.outbox || [])) || (res.outbox || []).length > 0, 'rider gets the cancelled text');
 
 console.log('panel actions -> texting server');
@@ -146,7 +157,7 @@ await B.js(`__xl.click(2)`);
 await until(() => B.js(`!!document.querySelector('#selRide [data-a=edit]')`), 'clicking row 2 shows Ava');
 await B.js(`document.querySelector('#selRide [data-a=edit]').click()`);
 await B.js(`document.getElementById('fPu').value = 'Welch Hall'; document.querySelector('#selRide [data-a=editGo]').click()`);
-await until(() => B.js(`__xl.text(2,'M') === 'Welch Hall'`), 'pick-up changed in the sheet');
+await until(() => B.js(`__xl.text(2,'${C.pu}') === 'Welch Hall'`), 'pick-up changed in the sheet');
 await until(async () => (await rideOf('5125550101')).pickup === 'Welch Hall', 'texting server got the new pick-up');
 await B.js(`document.querySelector('#selRide [data-a=undo]').click()`);
 await until(async () => (await rideOf('5125550101')).pickup === 'PCL', 'undo restored PCL in the sheet and the server');
@@ -156,7 +167,7 @@ await B.js(`__xl.row(5, ${JSON.stringify(ride(4, 0, 'Dee', 'Park', '5125550104',
 await B.js(`__xl.click(5)`);
 await until(() => B.js(`!!document.querySelector('#selRide [data-a=called]:not([disabled])') && document.querySelector('#selRide h2').textContent.includes('Dee')`), 'Dee selected');
 await B.js(`document.querySelector('#selRide [data-a=called]').click()`);
-await until(() => B.js(`__xl.text(5,'F') === '22:00' && __xl.text(5,'E') === 'T. Tester'`), 'Mark called: F5 = now, Dispatcher = my name');
+await until(() => B.js(`__xl.text(5,'${C.call}') === '22:00' && __xl.text(5,'${C.disp}') === 'T. Tester'`), 'Mark called: F5 = now, Dispatcher = my name');
 await until(async () => { const r = await rideOf('5125550104'); return r && r.call === '22:00'; }, 'texting server sees Dee as called');
 res = await bridge();
 ok(!(res.outbox || []).some(o => o.to.endsWith('5550104')), 'Dee is not texted');
@@ -168,7 +179,7 @@ await until(async () => (await rideOf('5125550104')).sheetState === 'dup', 'text
 await B.js(`__xl.click(2)`); await sleep(300);
 await B.js(`document.querySelector('#selRide [data-a=cancel]').click()`);
 await B.js(`document.getElementById('fReason').value = 'Not Answering'; document.querySelector('#selRide [data-a=cancelGo]').click()`);
-await until(() => B.js(`__xl.bg(2,'A') === '#000000' && __xl.text(2,'X') === 'Not Answering' && __xl.text(2,'F') === ''`), 'cancel: row 2 black, reason, Call Time cleared');
+await until(() => B.js(`__xl.bg(2,'A') === '#000000' && __xl.text(2,'${C.rsn}') === 'Not Answering' && __xl.text(2,'${C.call}') === ''`), 'cancel: row 2 black, reason, Call Time cleared');
 await until(async () => (await rideOf('5125550101')).sheetState === 'cancelled', 'texting server sees the cancel');
 
 console.log('a new response with the row above\'s copied highlight');
@@ -183,15 +194,15 @@ await sleep(2000);
 ok(!evs().includes('Old') && !evs().includes('5125550199'), 'rides older than 1 hour are not posted to GroupMe');
 
 console.log('a dispatcher edit wins over a stale server edit');
-await B.js(`__xl.type(3,'F','21:58')`); await sleep(1500);
+await B.js(`__xl.type(3,'${C.call}','21:58')`); await sleep(1500);
 msgs.push({ id: String(++seq), created_at: Math.floor(Date.now() / 1000), text: `💬 test ‹sw1›{"e":"upd","id":"f2","src":"s","f":{"call":"22:05"},"was":{"call":""}}` });
 await sleep(2500);
-ok(await B.js(`__xl.text(3,'F') === '21:58'`), 'the sheet keeps the dispatcher\'s 21:58');
+ok(await B.js(`__xl.text(3,'${C.call}') === '21:58'`), 'the sheet keeps the dispatcher\'s 21:58');
 
 console.log('dashboard ✎ Edit -> the sheet');
 const eli = await rideOf('5125550105');
 await rpc('editRide', eli.id, { dropoff: 'Jester West', first: 'Elias' });
-await until(() => B.js(`__xl.text(6,'N') === 'Jester West' && __xl.text(6,'K') === 'Elias'`), 'editRide wrote the drop-off and first name into the sheet');
+await until(() => B.js(`__xl.text(6,'${C.do}') === 'Jester West' && __xl.text(6,'${C.first}') === 'Elias'`), 'editRide wrote the drop-off and first name into the sheet');
 
 console.log('📋 test-rider poll -> its own local file');
 // the tester's phone comes from Texts.gs at run time, so it never lands in this (public) repo
