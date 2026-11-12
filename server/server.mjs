@@ -231,6 +231,10 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, head + gas.logRows().map(r => r.map(csvCell).join(',')).join('\n'), 'text/csv; charset=utf-8',
         { 'Content-Disposition': 'attachment; filename="SURE Walk Texts log.csv"' });
     }
+    if (req.method === 'GET' && p === '/poll.csv') { // the poll answers (night + answers, no names or numbers)
+      return send(res, 200, gas.pollRows().map(r => (r || []).map(csvCell).join(',')).join('\n'), 'text/csv; charset=utf-8',
+        { 'Content-Disposition': 'attachment; filename="SURE Walk Poll.csv"' });
+    }
     if (req.method === 'POST') {
       if (req.headers['x-sw-token'] !== TOKEN) return send(res, 403, { ok: false, error: 'Reload the page.' });
       const body = JSON.parse((await readBody(req)) || '{}');

@@ -188,6 +188,43 @@ msgs.push({ id: String(++seq), created_at: Math.floor(Date.now() / 1000), text: 
 await sleep(2500);
 ok(await B.js(`__xl.text(3,'F') === '21:58'`), 'the sheet keeps the dispatcher\'s 21:58');
 
+console.log('dashboard ✎ Edit -> the sheet');
+const eli = await rideOf('5125550105');
+await rpc('editRide', eli.id, { dropoff: 'Jester West', first: 'Elias' });
+await until(() => B.js(`__xl.text(6,'N') === 'Jester West' && __xl.text(6,'K') === 'Elias'`), 'editRide wrote the drop-off and first name into the sheet');
+
+console.log('📋 test-rider poll -> its own local file');
+// the tester's phone comes from Texts.gs at run time, so it never lands in this (public) repo
+const gs = fs.readFileSync(path.join(process.env.SUREWALK_GS || path.join(process.env.HOME, 'Documents/surewalk/texting/apps-script'), 'Texts.gs'), 'utf8');
+const tester = /POLL_TESTERS\s*=\s*\[\s*\{[^}]*first:\s*'([^']+)'[^}]*phone10:\s*'(\d{10})'/.exec(gs);
+if (!tester) ok(true, 'no POLL_TESTERS in Texts.gs — poll test skipped');
+else {
+  const [, tf, tp] = tester, name = tf.charAt(0).toUpperCase() + tf.slice(1);
+  await B.js(`__xl.row(7, ${JSON.stringify(ride(6, 0, name, 'Rider', tp, 'PCL', 'Kins'))})`);
+  const conf = await until(async () => { const r = await bridge(); return (r.outbox || []).find(o => o.to.endsWith(tp)); }, 'the test rider gets the confirmation');
+  await bridge([], conf ? [{ outId: conf.outId, status: 'sent' }] : []);
+  let q = 0;
+  const say = async (text, want, label) => {
+    const r = await bridge([{ id: 'p' + (++q), from: '+1' + tp, text, ts: NOW + 60e3 + q * 1000 }]);
+    const out = (r.outbox || []).filter(o => o.to.endsWith(tp));
+    await bridge([], out.map(o => ({ outId: o.outId, status: 'sent' })));
+    ok(out.some(o => want.test(o.body)), label);
+  };
+  await say('yes', /1\/3|1 for a text/i, 'YES -> confirmed + poll question 1');
+  await say('1', /2\/3|yes, no, or maybe|\?/i, 'answer 1 -> question 2');
+  await say('yes', /3\/3|\?/i, 'answer 2 -> question 3');
+  await say('more vans please', /thank/i, 'answer 3 -> thanks');
+  const poll = JSON.parse(fs.readFileSync(path.join(TMP, 'state', 'poll.json'), 'utf8'));
+  const last = poll[poll.length - 1] || [];
+  ok(/night/i.test(String((poll[0] || [])[0])) && last[1] === 'Text' && last[2] === 'Yes' && last[3] === 'more vans please' && last[4] === 'finished', 'answers saved in poll.json: ' + JSON.stringify(last));
+  ok(!JSON.stringify(poll).includes(tp) && !JSON.stringify(poll).includes(name), 'poll.json has no name or phone');
+  ok((fs.statSync(path.join(TMP, 'state', 'poll.json')).mode & 0o077) === 0, 'poll.json readable only by the user');
+  ok(!fs.readFileSync(path.join(TMP, 'state', 'messages.jsonl'), 'utf8').includes('"Answers"'), 'poll did not go into the message log');
+  ok(!evs().includes('more vans'), 'no poll answers in the GroupMe chat');
+  const csv = await (await fetch(`http://127.0.0.1:${SPORT}/poll.csv`)).text();
+  ok(csv.includes('more vans please'), '/poll.csv downloads the answers');
+}
+
 console.log('privacy');
 const all = evs();
 ok(!/Reply YES|SURE Walk got your ride|your ride is cancelled/i.test(all), 'no text-message content in the chat');
