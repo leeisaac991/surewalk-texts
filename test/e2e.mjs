@@ -256,6 +256,15 @@ await bridge([], testPollMsg ? [{ outId: testPollMsg.outId, status: 'sent' }] : 
 const q1Reply = await bridge([{ id: 'tp1', from: '+15125559999', text: '1', ts: NOW + 120e3 }]);
 ok((q1Reply.outbox || []).some(o => o.to.endsWith('5559999') && /2\/3/.test(o.body)), 'replying 1 to test poll gets question 2/3');
 
+await rpc('sendTestPoll', '5125557777');
+const testPoll2 = await until(async () => {
+  const r = await bridge();
+  return (r.outbox || []).find(o => o.to.endsWith('5557777'));
+}, 'sendTestPoll queued to 5125557777');
+await bridge([], testPoll2 ? [{ outId: testPoll2.outId, status: 'sent' }] : []);
+const q1Custom = await bridge([{ id: 'tp2', from: '+15125557777', text: 'mobile app with live map', ts: NOW + 130e3 }]);
+ok((q1Custom.outbox || []).some(o => o.to.endsWith('5557777') && /2\/3/.test(o.body)), 'replying custom idea to Q1 advances to question 2/3');
+
 console.log('privacy');
 const all = evs();
 ok(!/Reply YES|SURE Walk got your ride|your ride is cancelled/i.test(all), 'no text-message content in the chat');
