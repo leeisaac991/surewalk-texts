@@ -53,7 +53,7 @@ const HEADER = (LAYOUT === 'old' ? COLS_OLD : COLS_NOV).concat(['Phone number. O
   'Do you require Americans with Disabilities Act assistance?', 'Location', 'Vehicle Type', 'Driver', 'Navigator', 'Agree 1', 'Agree 2', 'Agree 3', 'Email Address:', 'Reason for Cancellation', 'Notes']);
 const idx = re => HEADER.findIndex(h => re.test(h));
 const L = n => String.fromCharCode(65 + n);
-const C = { call: L(idx(/^Call Time/)), disp: L(idx(/^Dispatcher/)), rsn: L(idx(/^Reason/)), pu: L(idx(/^Pick-up/)), do: L(idx(/^Drop-off/)), first: L(idx(/^First Name/)) };
+const C = { call: L(idx(/^Call Time/)), disp: L(idx(/^Dispatcher/)), rsn: L(idx(/^Reason/)), pu: L(idx(/^Pick-up/)), do: L(idx(/^Drop-off/)), first: L(idx(/^First Name/)), arr: L(idx(/^Arrival Time/)) };
 const wallParts = minAgo => { const d = new Date(NOW - 6 * 3600e3 - minAgo * 60e3); return [`${d.getUTCMonth() + 1}/${d.getUTCDate()}/${d.getUTCFullYear()}`, `${d.getUTCHours()}:${String(d.getUTCMinutes()).padStart(2, '0')}`]; };
 const wall = minAgo => wallParts(minAgo).join(' ');
 const ride = (id, minAgo, first, last, phone, pu, dropoff, extra = {}) => {
@@ -235,6 +235,16 @@ else {
   ok(!evs().includes('more vans'), 'no poll answers in the GroupMe chat');
   const csv = await (await fetch(`http://127.0.0.1:${SPORT}/poll.csv`)).text();
   ok(csv.includes('more vans please'), '/poll.csv downloads the answers');
+
+  // Verify rider is marked permanently in TX_POLLED so they are never polled again
+  const props = JSON.parse(fs.readFileSync(path.join(TMP, 'state', 'props.json'), 'utf8'));
+  const polledChunk = Object.keys((props && props.script) || {})
+    .filter(k => k.startsWith('TX_POLLED#') && k !== 'TX_POLLED#n')
+    .sort()
+    .map(k => props.script[k])
+    .join('');
+  const polledList = JSON.parse(polledChunk || '[]');
+  ok(polledList.includes(tp), 'tester phone marked permanently in TX_POLLED (never polled again)');
 }
 
 console.log('🧪 test poll & test text via RPC');
