@@ -53,6 +53,8 @@ const gas = gasLib.install(STATE, store);
 function loadCode() {
   const files = ['Build.gs', 'Places.gs', 'Rides.gs', 'Texts.gs', 'Bridge.gs', 'Code.gs'].filter(f => fs.existsSync(path.join(GS, f)));
   if (!files.includes('Code.gs')) throw new Error(`The SURE Walk Texts code isn't in ${GS} (set SUREWALK_GS).`);
+  // Tests only: SW_SEND_GAP_MS=0 turns off the texting code's send pacing (one text every 6 s in real use).
+  if (process.env.SW_SEND_GAP_MS != null) globalThis.SW_SEND_GAP_MS = Number(process.env.SW_SEND_GAP_MS);
   vm.runInThisContext(files.map(f => `;/* ${f} */\n` + fs.readFileSync(path.join(GS, f), 'utf8')).join('\n'), { filename: 'surewalk-texts.gs' });
   log('loaded', files.join(' '), 'from', GS);
 }

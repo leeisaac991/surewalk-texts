@@ -109,7 +109,7 @@ function server() {
   fs.mkdirSync(cfg, { recursive: true });
   fs.writeFileSync(path.join(cfg, 'config.json'), JSON.stringify({ token: 'tok_' + 'b'.repeat(30), groupId: 'g1', groupName: 'SURE Walk Texts sync' }));
   const p = spawn(process.execPath, ['--import', 'data:text/javascript,' + encodeURIComponent(`const R=Date,T0=${NOW},R0=R.now();globalThis.Date=class extends R{constructor(...a){super(...(a.length?a:[T0+R.now()-R0]))}static now(){return T0+R.now()-R0}};`), path.join(ROOT, 'server/server.mjs')], {
-    env: Object.assign({}, process.env, { PORT: SPORT, SUREWALK_STATE: path.join(TMP, 'state'), XDG_CONFIG_HOME: path.join(TMP, 'cfg'), GROUPME_API: `http://127.0.0.1:${GPORT}/v3`, SW_POLL_MS: 700, SW_POST_GAP_MS: 200 }),
+    env: Object.assign({}, process.env, { PORT: SPORT, SUREWALK_STATE: path.join(TMP, 'state'), XDG_CONFIG_HOME: path.join(TMP, 'cfg'), GROUPME_API: `http://127.0.0.1:${GPORT}/v3`, SW_POLL_MS: 700, SW_POST_GAP_MS: 200, SW_SEND_GAP_MS: 0 }),
     stdio: ['ignore', 'pipe', 'pipe'] });
   let out = ''; p.stdout.on('data', d => { out += d; }); p.stderr.on('data', d => { out += d; });
   return { p, out: () => out };
