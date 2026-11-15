@@ -56,13 +56,19 @@
     },
     getUsedRangeOrNullObject() { return { isNullObject: false, rowIndex: 0, rowCount: lastRow(), load() {} }; },
     onSelectionChanged: { add(h) { selHandlers.push(h); } } };
-  const workbook = { name: 'Rides.xlsx', load() {}, worksheets: { getFirst: () => ws, getItem: () => ws },
-    getSelectedRange: () => ({ address: 'Form1!' + selected.replace(/^R(\d+)$/, 'A$1'), load() {} }) };
+  // like the live workbook: an empty-ish "Pairings" tab FIRST, the month's rides tab after it
+  ws.name = 'November';
+  const pairings = { name: 'Pairings', load() {}, getRangeByIndexes: () => ({ load() {}, text: [['11/10/2026', 'Driver', 'Navigator']] }),
+    getUsedRangeOrNullObject: () => ({ isNullObject: false, rowIndex: 0, rowCount: 1, load() {} }), onSelectionChanged: { add() {} } };
+  const sheets = [pairings, ws].map((x, i) => Object.assign(x, { position: i }));
+  const workbook = { name: 'Rides.xlsx', load() {}, worksheets: { items: sheets, load() {}, getFirst: () => sheets[0],
+      getItem: n => { const x = sheets.find(t => t.name === n); if (!x) throw Object.assign(new Error(`no tab ${n}`), { code: 'ItemNotFound' }); return x; } },
+    getSelectedRange: () => ({ address: ws.name + '!' + selected.replace(/^R(\d+)$/, 'A$1'), load() {} }) };
   window.Excel = { run: async fn => fn({ workbook, sync: async () => {} }), ClearApplyTo: { contents: 'Contents' } };
   window.Office = { onReady: cb => setTimeout(() => cb({ host: 'Excel' }), 0) };
   const col = c => colN(c) - 1;
   window.__xl = { writes, text: (r, c) => text(cell(r - 1, col(c))), bg: (r, c) => cell(r - 1, col(c)).bg, fc: (r, c) => cell(r - 1, col(c)).fc,
     type(r, c, s) { Object.assign(cell(r - 1, col(c)), typed(s)); }, row(r, vals) { vals.forEach((s, j) => Object.assign(cell(r - 1, j), typed(s))); },
     paint(r, color) { for (let j = 0; j < W; j++) cell(r - 1, j).bg = color; },
-    click(r) { selected = 'R' + r; selHandlers.forEach(h => h({ address: 'Form1!K' + r })); } };
+    click(r) { selected = 'R' + r; selHandlers.forEach(h => h({ address: ws.name + '!K' + r })); } };
 })();
