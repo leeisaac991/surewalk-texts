@@ -93,7 +93,28 @@
   const RIDE_FIELDS = ['first', 'last', 'phone', 'pu', 'do', 'ada', 'disp', 'call', 'arr', 'loc', 'van', 'drv', 'nav', 'rsn'];
 
   /* ---------------- reading ---------------- */
-  const sheetOf = ctx => (set.tab ? ctx.workbook.worksheets.getItem(set.tab) : ctx.workbook.worksheets.getFirst());
+  // The rides tab. The workbook's first tab is now "Pairings", so it isn't "the first tab" anymore:
+  //   the tab set in ⚙ Settings, else the tab named for tonight's month ("November", "Dec 2026"), else the latest
+  //   month tab, else the first tab that isn't Pairings. Everything but readSheet uses the tab readSheet last used.
+  const MONTHS = ['jan(uary)?', 'feb(ruary)?', 'mar(ch)?', 'apr(il)?', 'may', 'june?', 'july?', 'aug(ust)?', 'sept?(ember)?', 'oct(ober)?', 'nov(ember)?', 'dec(ember)?'];
+  const monthOfTab = name => MONTHS.findIndex(m => new RegExp(`(^|[^a-z])${m}($|[^a-z])`, 'i').test(String(name)));
+  const nightMonth = () => +new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', month: 'numeric' })
+    .format(new Date(Date.now() - 6 * 3600e3)) - 1; // 12:30 AM Dec 1 is still the Nov 30 night
+  function pickRidesTab(names, month) {
+    const tabs = names.filter(n => !/pairing/i.test(n));
+    const back = n => (month - monthOfTab(n) + 12) % 12; // months since that tab's month: 0 = tonight's
+    const months = tabs.filter(n => monthOfTab(n) >= 0).sort((a, b) => back(a) - back(b));
+    return months[0] || tabs[0] || names[0];
+  }
+  let ridesTab = '';
+  async function sheetOf(ctx, reuse) {
+    if (set.tab) return ctx.workbook.worksheets.getItem(set.tab);
+    if (!(reuse && ridesTab)) {
+      const wss = ctx.workbook.worksheets; wss.load('items/name,items/position'); await ctx.sync();
+      ridesTab = pickRidesTab(wss.items.slice().sort((a, b) => a.position - b.position).map(x => x.name), nightMonth());
+    }
+    return ctx.workbook.worksheets.getItem(ridesTab);
+  }
   let X = null; // { name, col, rides: [ride], byId, byRow }
   function rowColor(cells, cols) { // the row's color: the most common fill among the ride columns
     const n = {};
@@ -102,7 +123,7 @@
   }
   async function readSheet() {
     X = await Excel.run(async ctx => {
-      const ws = sheetOf(ctx);
+      const ws = await sheetOf(ctx);
       ws.load('name');
       const used = ws.getUsedRangeOrNullObject(true); used.load('rowIndex,rowCount');
       const hdr = ws.getRangeByIndexes(0, 0, 1, READ_COLS); hdr.load('text');
@@ -161,7 +182,7 @@
     });
     if (!fixes.length) return;
     await Excel.run(async ctx => {
-      const ws = sheetOf(ctx);
+      const ws = await sheetOf(ctx, true);
       fixes.forEach(r => { const rg = ws.getRange(`${r.row}:${r.row}`); rg.format.fill.clear(); rg.format.font.color = '#000000'; });
       await ctx.sync();
     });
@@ -226,7 +247,7 @@
   async function act(r, label, keys, wholeRow, fn) {
     const snap = snapshot(r, keys, wholeRow);
     await Excel.run(async ctx => {
-      const ws = sheetOf(ctx);
+      const ws = await sheetOf(ctx, true);
       await check(ws, ctx, r);
       fn(ws);
       await ctx.sync();
@@ -243,7 +264,7 @@
     if (!u) return toast('Nothing to undo.');
     const r = X.byId.get(u.id) || { id: u.id, row: u.row, f: u.before };
     await Excel.run(async ctx => {
-      const ws = sheetOf(ctx);
+      const ws = await sheetOf(ctx, true);
       await check(ws, ctx, Object.assign({}, r, { row: u.row }));
       u.keys.forEach(k => writeField(ws, u.row, k, u.before[k]));
       if (u.wholeRow) {
@@ -349,7 +370,7 @@
     });
     if (!work.length) return;
     await Excel.run(async ctx => {
-      const ws = sheetOf(ctx);
+      const ws = await sheetOf(ctx, true);
       for (const { r, ch } of work) {
         try { await check(ws, ctx, r); } catch (e) { feed(e.message, true); continue; }
         Object.keys(ch).forEach(k => { if (k === 'bg') paintRow(ws, r.row, ch.bg); else writeField(ws, r.row, k, ch[k]); });
@@ -409,7 +430,7 @@
       }
       render();
     } catch (e) {
-      loadErr = e && e.code === 'ItemNotFound' ? `There's no tab named "${set.tab}" — fix it in ⚙ Settings.` : (e.message || String(e));
+      loadErr = e && e.code === 'ItemNotFound' ? `There's no tab named "${set.tab || ridesTab}" — fix it in ⚙ Settings.` : (e.message || String(e));
       render();
     } finally { busy = false; }
   }
@@ -518,7 +539,7 @@
     if (sel !== id) openForm = '';
     sel = id; render();
     const r = X && X.byId.get(id);
-    if (selectInSheet && r) Excel.run(async ctx => { sheetOf(ctx).getRange(`${letter(X.col.first || 1)}${r.row}`).select(); await ctx.sync(); }).catch(() => {});
+    if (selectInSheet && r) Excel.run(async ctx => { (await sheetOf(ctx, true)).getRange(`${letter(X.col.first || 1)}${r.row}`).select(); await ctx.sync(); }).catch(() => {});
   }
   $('q').addEventListener('input', renderList);
   document.querySelectorAll('.seg button').forEach(b => b.addEventListener('click', () => {
@@ -538,7 +559,7 @@
   async function watchSelection() {
     try {
       await Excel.run(async ctx => {
-        sheetOf(ctx).onSelectionChanged.add(ev => onSelect(ev.address));
+        (await sheetOf(ctx, true)).onSelectionChanged.add(ev => onSelect(ev.address));
         const cur = ctx.workbook.getSelectedRange(); cur.load('address');
         await ctx.sync();
         onSelect(cur.address);
