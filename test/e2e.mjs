@@ -212,15 +212,27 @@ const tester = /POLL_TESTERS\s*=\s*\[\s*\{[^}]*first:\s*'([^']+)'[^}]*phone10:\s
 if (!tester) ok(true, 'no POLL_TESTERS in Texts.gs — poll test skipped');
 else {
   const [, tf, tp] = tester, name = tf.charAt(0).toUpperCase() + tf.slice(1);
+  // the rider poll is a setting, off by default: a confirmed rider gets no poll until it's turned on
+  ok((await rpc('getState')).riderPoll === false, 'the rider poll setting is off by default');
+  const op = '5125550177';
+  await B.js(`__xl.row(8, ${JSON.stringify(ride(7, 0, 'Omar', 'Rider', op, 'PCL', 'Jester'))})`);
+  const oc = await until(async () => { const r = await bridge(); return (r.outbox || []).find(o => o.to.endsWith(op)); }, 'a rider gets the confirmation');
+  await bridge([], oc ? [{ outId: oc.outId, status: 'sent' }] : []);
+  const oy = await bridge([{ id: 'o1', from: '+1' + op, text: 'yes', ts: NOW + 50e3 }]);
+  const oout = (oy.outbox || []).filter(o => o.to.endsWith(op));
+  await bridge([], oout.map(o => ({ outId: o.outId, status: 'sent' })));
+  ok(oout.some(o => /confirm/i.test(o.body)) && !oout.some(o => /1\/3/.test(o.body)), 'poll off: YES confirms without poll question 1');
+  await rpc('setToggle', 'TX_POLL', true);
+  ok((await rpc('getState')).riderPoll === true, 'the rider poll setting turns on');
   await B.js(`__xl.row(7, ${JSON.stringify(ride(6, 0, name, 'Rider', tp, 'PCL', 'Kins'))})`);
   const conf = await until(async () => { const r = await bridge(); return (r.outbox || []).find(o => o.to.endsWith(tp)); }, 'the test rider gets the confirmation');
   await bridge([], conf ? [{ outId: conf.outId, status: 'sent' }] : []);
   let q = 0;
-  const say = async (text, want, label) => {
+  const say = async (text, want, label, none) => {
     const r = await bridge([{ id: 'p' + (++q), from: '+1' + tp, text, ts: NOW + 60e3 + q * 1000 }]);
     const out = (r.outbox || []).filter(o => o.to.endsWith(tp));
     await bridge([], out.map(o => ({ outId: o.outId, status: 'sent' })));
-    ok(out.some(o => want.test(o.body)), label);
+    ok(none ? !out.some(o => want.test(o.body)) : out.some(o => want.test(o.body)), label);
   };
   await say('yes', /1\/3|1 for a text/i, 'YES -> confirmed + poll question 1');
   await say('1', /2\/3|yes, no, or maybe|\?/i, 'answer 1 -> question 2');
