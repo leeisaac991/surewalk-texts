@@ -323,6 +323,33 @@ await B.js(`__xl.row(${nr + 2}, ['', '', 'DRIVER', 'NAV'])`); // something under
 await addRide({ aFirst: 'Ivy', aPhone: '5125550162', aPu: 'PCL', aDo: 'Kins' });
 await until(() => B.js(`__xl.text(${nr + 2},'${C.first}') === 'Ivy' && __xl.text(${nr + 3},'C') === 'DRIVER' && __xl.writes.some(w => /inserted/.test(w))`), 'row under the rides not blank: a row is inserted, nothing overwritten');
 
+console.log('＋ Ride on the texting computer\'s dashboard -> the Excel panel adds the row');
+const addApi = async b => (await fetch(`http://127.0.0.1:${SPORT}/api/addRide`, { method: 'POST', headers: { 'X-SW-Token': TOKEN, 'Content-Type': 'application/json' }, body: JSON.stringify(b) })).json();
+const sheetRowOf = phone => B.js(`(() => { const r = SWT.X.rides.find(x => x.f.phone === '${phone}'); return r ? r.row : 0; })()`);
+ok(/first name/.test((await addApi({ first: '', phone: '5125550170', pu: 'PCL', do: 'Kins' })).error || ''), 'dashboard add: missing first name refused');
+ok(/10 digits/.test((await addApi({ first: 'Jo', phone: '555', pu: 'PCL', do: 'Kins' })).error || ''), 'dashboard add: bad phone refused');
+const ja = await addApi({ first: 'Jo', last: 'Desk', phone: '+1 512-555-0170', eid: 'jd1', pu: '=Welch Hall', do: 'Dobie', ada: 'Yes', notes: 'walk-in' });
+ok(ja.ok && /^a[0-9a-f]{8}$/.test(ja.id), 'dashboard add accepted: ' + JSON.stringify(ja));
+const jrow = await until(() => sheetRowOf('5125550170'), 'the Excel panel wrote the dashboard\'s ride into the sheet');
+if (jrow) {
+  ok(await B.js(`__xl.text(${jrow},'${C.pu}') === 'Welch Hall' && __xl.text(${jrow},'${L(idx(/^Do you require/))}') === 'Yes' && __xl.text(${jrow},'${L(idx(/^UT EID/))}') === 'jd1' && __xl.text(${jrow},'A') === ''`), 'pick-up (formula sign stripped), ADA, EID filled; Id blank');
+  ok(await B.js(`__xl.text(${jrow},'${L(idx(/^Notes/))}') === 'Added on the texting computer #${ja.id} — walk-in'`), 'Notes tag the request id');
+  ok(await B.js(`!document.querySelector('#selRide h2') || !document.querySelector('#selRide h2').textContent.includes('Jo ')`), "the dispatcher's selection isn't changed");
+}
+await until(async () => { const s = await (await fetch(`http://127.0.0.1:${SPORT}/api/status`, { method: 'POST', headers: { 'X-SW-Token': TOKEN } })).json(); return (s.adds || []).some(a => a.id === ja.id && a.state === 'added' && +a.row === jrow); }, 'server status: the add shows as added, with its row');
+const jt = await until(async () => { const r = await bridge(); return (r.outbox || []).find(o => o.to.endsWith('5550170')); }, 'the dashboard\'s ride gets its confirmation text');
+await bridge([], jt ? [{ outId: jt.outId, status: 'sent' }] : []);
+ok(/already has an open ride/.test((await addApi({ first: 'Jo', phone: '5125550170', pu: 'PCL', do: 'Kins' })).dup || ''), 'same phone open tonight: the dashboard is asked first');
+const replay = msgs.find(m => m.text.includes(`"id":"${ja.id}"`));
+msgs.push(Object.assign({}, replay, { id: String(++seq) })); // the request seen again (a panel reload re-reads the chat)
+await sleep(2500);
+ok(await B.js(`SWT.X.rides.filter(x => x.f.phone === '5125550170').length === 1`), 'a request seen twice adds the ride once');
+const ka = await addApi({ first: 'Kim', phone: '5125550171', pu: 'PCL', do: 'Kins', called: true });
+const krow = await until(() => sheetRowOf('5125550171'), '"already talked to them" ride added');
+ok(ka.ok && krow && await B.js(`/^[0-9]+:[0-9][0-9]$/.test(__xl.text(${krow},'${C.call}'))`), 'its Call Time is filled');
+await sleep(1500);
+ok(!((await bridge()).outbox || []).some(o => o.to.endsWith('5550171')), 'and it is not texted');
+
 console.log('privacy');
 const all = evs();
 ok(!/Reply YES|SURE Walk got your ride|your ride is cancelled/i.test(all), 'no text-message content in the chat');
@@ -332,10 +359,12 @@ ok(logRows >= 3, `the message log stays on this computer (${logRows} rows)`);
 ok((fs.statSync(path.join(TMP, 'state', 'messages.jsonl')).mode & 0o077) === 0, 'log readable only by the user');
 
 if (process.env.SHOTS) {
-  const shot = async (url, file, w, h) => { const t = await (await fetch(`http://127.0.0.1:${CPORT}/json/new?${url}`, { method: 'PUT' })).json(); const s = new WebSocket(t.webSocketDebuggerUrl); await new Promise(r => s.addEventListener('open', r)); let i = 0; const c = (m, p) => new Promise(r => { const id = ++i; s.addEventListener('message', e => { const x = JSON.parse(e.data); if (x.id === id) r(x.result); }); s.send(JSON.stringify({ id, method: m, params: p })); }); await c('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: 1, mobile: false }); await c('Page.reload'); await sleep(3500); const r = await c('Page.captureScreenshot', { format: 'png' }); fs.writeFileSync(file, Buffer.from(r.data, 'base64')); s.close(); };
+  const shot = async (url, file, w, h, js) => { const t = await (await fetch(`http://127.0.0.1:${CPORT}/json/new?${url}`, { method: 'PUT' })).json(); const s = new WebSocket(t.webSocketDebuggerUrl); await new Promise(r => s.addEventListener('open', r)); let i = 0; const c = (m, p) => new Promise(r => { const id = ++i; s.addEventListener('message', e => { const x = JSON.parse(e.data); if (x.id === id) r(x.result); }); s.send(JSON.stringify({ id, method: m, params: p })); }); await c('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: 1, mobile: false }); await c('Page.reload'); await sleep(3500); if (js) { await c('Runtime.evaluate', { expression: js }); await sleep(800); } const r = await c('Page.captureScreenshot', { format: 'png' }); fs.writeFileSync(file, Buffer.from(r.data, 'base64')); s.close(); };
   await B.js(`__xl.click(4)`);
   await shot(`http://127.0.0.1:${GPORT}/panel?click=2`, process.env.SHOTS + '/panel.png', 380, 900);
   await shot(`http://127.0.0.1:${SPORT}/`, process.env.SHOTS + '/dashboard.png', 1280, 800);
+  await shot(`http://127.0.0.1:${SPORT}/`, process.env.SHOTS + '/dashboard-add.png', 1280, 900, "document.getElementById('swAdd').click()");
+  await shot(`http://127.0.0.1:${GPORT}/panel`, process.env.SHOTS + '/panel-add.png', 380, 900, "document.getElementById('addBtn').click()");
   await shot(`http://127.0.0.1:${SPORT}/setup`, process.env.SHOTS + '/setup.png', 800, 800);
 }
 B.close(); S.p.kill(); gm.close();

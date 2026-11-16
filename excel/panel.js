@@ -159,7 +159,7 @@
         f.bg = rowColor(cells, rideCols);
         if (/^#+$/.test(String(t[col.phone - 1]))) t[col.phone - 1] = f.phone;
         const id = rideId(col, v, t, ts);
-        rides.push({ id, row: top + i, f, cells });
+        rides.push({ id, row: top + i, f, cells, notes: get('notes') });
       }
       return { name: ws.name, col, rides, lastRow };
     });
@@ -318,15 +318,18 @@
    * unless "called" is ticked.
    */
   const wallToSerial = w => wallMs(w) / 864e5 + 25569;
-  async function addRide(a) {
+  async function addRide(a, quiet) { // a: first last phone eid pu do ada notes, call ('H:MM' or ''), disp, by
     await readSheet();
     const col = X.col, w = SWP.austin(), lastRide = X.rides.length ? Math.max(...X.rides.map(r => r.row)) : 0;
     const vals = {}; // column -> value
-    const put = (k, v) => { if (col[k] && v !== '' && v != null) vals[col[k]] = v; };
+    const put = (k, v) => {
+      if (typeof v === 'string') v = v.replace(/^[=+@-]+/, '').trim(); // typed text never becomes a formula
+      if (col[k] && v !== '' && v != null) vals[col[k]] = v;
+    };
     if (col.ts) put('ts', wallToSerial(w)); else { put('date', Math.floor(wallToSerial(w))); put('stime', hmToSerial(`${+w.slice(11, 13)}:${w.slice(14, 16)}`)); }
     ['first', 'last', 'phone', 'eid', 'pu', 'do', 'ada'].forEach(k => put(k, a[k]));
-    if (a.called) { put('call', hmToSerial(nowHM())); if (set.name) put('disp', set.name); }
-    put('notes', [`Added in the Texts panel${set.name ? ' by ' + set.name : ''}`, a.notes].filter(Boolean).join(' — '));
+    if (/^\d{1,2}:\d{2}$/.test(a.call || '')) { put('call', hmToSerial(a.call)); put('disp', a.disp); }
+    put('notes', [a.by || `Added in the Texts panel${set.name ? ' by ' + set.name : ''}`, a.notes].filter(Boolean).join(' — '));
     const timeFmt = { ts: 'm/d/yyyy h:mm', date: 'm/d/yyyy', stime: 'h:mm AM/PM', call: 'h:mm' };
     const row = await Excel.run(async ctx => {
       const ws = await sheetOf(ctx, true);
@@ -360,17 +363,16 @@
       await ctx.sync();
       return row;
     });
-    feed(`Added ride: ${who(a)} (row ${row})`);
+    feed(`Added ride${quiet ? ' from the texting computer' : ''}: ${who(a)} (row ${row})`);
     toast(`Added ${who(a)}'s ride — row ${row}`);
-    await refresh();
-    const r = X.byRow.get(row);
-    if (r) choose(r.id, true);
+    await readSheet();
+    if (!quiet) { render(); const r = X.byRow.get(row); if (r) choose(r.id, true); }
     return row;
   }
 
   /* ---------------- GroupMe sync ---------------- */
   const S = { rides: {} };               // the rides as the chat describes them
-  const sync = { ready: false, lastId: '', seen: new Set(), pending: [], todo: [], lastPost: 0, err: '', lastServerAt: 0, busy: false };
+  const sync = { ready: false, lastId: '', seen: new Set(), pending: [], todo: [], adds: [], lastPost: 0, err: '', lastServerAt: 0, busy: false };
   async function gm(pathname, query, body, token) {
     const u = new URL(GM + pathname);
     Object.entries(query || {}).forEach(([k, v]) => u.searchParams.set(k, v));
@@ -386,6 +388,7 @@
       sync.seen.add(m.id);
       if (!sync.lastId || BigInt(m.id) > BigInt(sync.lastId)) sync.lastId = m.id;
       SWP.parse(m.text).forEach(ev => {
+        if (ev.e === 'add') { if (ev.src === 's') sync.adds.push(ev); return; }
         SWP.fold(S, ev, m.created_at * 1000);
         if (ev.src === 's') { sync.todo.push(ev); sync.lastServerAt = Math.max(sync.lastServerAt, m.created_at * 1000); }
       });
@@ -444,6 +447,19 @@
       await ctx.sync();
     });
   }
+  // Rides typed into the texting computer's dashboard -> new rows. Each once: its Notes carry "#<request id>", and a
+  // ride with that phone submitted since the request counts as done too (a reload re-reads the chat). Older than
+  // 30 min = dropped (the dashboard says so).
+  async function applyAdds() {
+    const todo = sync.adds.splice(0), now = wallMs(SWP.austin());
+    for (const ev of todo) {
+      const f = ev.f, tag = '#' + ev.id, ph = String(f.phone || '').replace(/\D/g, '').slice(-10);
+      if (!f.ts || now - wallMs(f.ts) > 30 * 60e3) continue;
+      if (X.rides.some(r => (r.notes || '').includes(tag) || (ph && r.f.phone.replace(/\D/g, '').slice(-10) === ph && r.f.ts.slice(0, 16) >= f.ts.slice(0, 16)))) continue;
+      try { await addRide(Object.assign({}, f, { by: `Added on the texting computer ${tag}` }), true); }
+      catch (e) { feed(`Couldn't add ${who(f)}'s ride from the texting computer: ${e.message || e}`, true); }
+    }
+  }
   // The sheet vs the chat: post what the chat doesn't know yet (new rides, changed cells).
   function diff() {
     const lines = [], nowMs = wallMs(SWP.austin());
@@ -489,6 +505,7 @@
       loadErr = '';
       if (syncOn() && sync.ready && !sync.err) {
         await applyServer();
+        await applyAdds();
         diff();
         try { await postOne(); } catch (e) { sync.err = e.message || String(e); }
       }
@@ -650,7 +667,9 @@
     const g = id => $(id).value.trim();
     let phone = g('aPhone').replace(/\D/g, '');
     if (phone.length === 11 && phone.charAt(0) === '1') phone = phone.slice(1);
-    const a = { first: g('aFirst'), last: g('aLast'), phone, eid: g('aEid'), pu: g('aPu'), do: g('aDo'), ada: $('aAda').value, notes: g('aNotes'), called: $('aCalled').checked };
+    const called = $('aCalled').checked;
+    const a = { first: g('aFirst'), last: g('aLast'), phone, eid: g('aEid'), pu: g('aPu'), do: g('aDo'), ada: $('aAda').value, notes: g('aNotes'),
+      call: called ? nowHM() : '', disp: called ? set.name : '' };
     const miss = [['first', 'first name'], ['pu', 'pick-up'], ['do', 'drop-off']].filter(([k]) => !a[k]).map(x => x[1]);
     if (miss.length) { $('aMsg').textContent = 'Fill in the ' + miss.join(', ') + '.'; return; }
     if (phone.length !== 10) { $('aMsg').textContent = 'The phone number needs 10 digits.'; return; }
@@ -691,7 +710,7 @@
     const next = Object.assign({}, set, { name: $('setName').value.trim(), dispName: $('setDispName').checked, tab: $('setTab').value.trim(),
       token: tok, groupId: g.value, groupName: g.value ? g.options[g.selectedIndex].text : '', sync: $('setSync').checked });
     if (next.sync && (!next.token || !next.groupId)) throw new Error('GroupMe sync needs a token and a chat.');
-    if (next.groupId !== set.groupId || next.token !== set.token || !next.sync) Object.assign(sync, { ready: false, lastId: '', seen: new Set(), pending: [], todo: [], err: '' }), (S.rides = {});
+    if (next.groupId !== set.groupId || next.token !== set.token || !next.sync) Object.assign(sync, { ready: false, lastId: '', seen: new Set(), pending: [], todo: [], adds: [], err: '' }), (S.rides = {});
     set = next; ls.set('settings', set);
     showSettings(false);
     toast('Saved');

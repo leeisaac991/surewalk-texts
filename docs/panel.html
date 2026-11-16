@@ -8,7 +8,9 @@
   button, input, select { font: inherit; color: inherit; }
   .bar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 12px; background: var(--accent); color: #fff; font-weight: 600; }
   .bar .sp { flex: 1; }
-  .bar button { border: 0; background: rgba(255,255,255,.18); color: #fff; border-radius: 99px; padding: 3px 10px; cursor: pointer; font-size: 12px; font-weight: 600; }
+  .bar > span:first-child { white-space: nowrap; flex: none; }
+  .bar .sync { flex: 0 1 auto; min-width: 0; }
+  .bar button { flex: none; white-space: nowrap; border: 0; background: rgba(255,255,255,.18); color: #fff; border-radius: 99px; padding: 3px 10px; cursor: pointer; font-size: 12px; font-weight: 600; }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: #bbb; display: inline-block; }
   .sync { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; opacity: .95; max-width: 55vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   main { padding: 10px; display: grid; gap: 10px; }
@@ -67,7 +69,7 @@
   <span>SURE Walk Texts</span><span class="sp"></span>
   <span class="sync" id="syncLbl" title="GroupMe sync"><span class="dot" id="syncDot"></span><span id="syncTxt">Sync off</span></span>
   <button id="addBtn" title="Add a ride by hand (not through the form)">＋ Ride</button>
-  <button id="restartBtn" title="Restart the panel (reloads it with the newest version)">↻ Restart</button>
+  <button id="restartBtn" title="Restart the panel (reloads it with the newest version)" aria-label="Restart the panel">↻</button>
   <button id="setBtn" title="Settings">⚙</button>
 </div>
 

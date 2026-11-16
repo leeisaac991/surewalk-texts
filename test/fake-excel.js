@@ -62,7 +62,9 @@
   // FAKE_SHEET.table: the rides are an Excel table (header row 1 down to the last ride when the page loads)
   const tbl = { rows: window.FAKE_SHEET.table ? lastRow() : 0 };
   ws.tables = { items: tbl.rows ? [{ name: 'Table1', getRange: () => ({ load() {}, rowIndex: 0, rowCount: tbl.rows, columnIndex: 0, columnCount: W }),
-    rows: { add() { tbl.rows++; writes.push('table row added'); } } }] : [], load() {} };
+    rows: { add() { // like Excel: a new row at the table's end, pushing whatever sits below down
+      const l = []; for (let j = 0; j < W; j++) l.push(newCell('')); cell(tbl.rows, 0); grid.splice(tbl.rows, 0, l);
+      tbl.rows++; writes.push('table row added'); } } }] : [], load() {} };
   // like the live workbook: an empty-ish "Pairings" tab FIRST, the month's rides tab after it
   ws.name = 'November';
   const pairings = { name: 'Pairings', load() {}, getRangeByIndexes: () => ({ load() {}, text: [['11/10/2026', 'Driver', 'Navigator']] }),
