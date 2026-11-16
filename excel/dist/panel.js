@@ -583,7 +583,7 @@
    * window can't reach the sheet itself: it asks the side panel (ACTIONS) and gets the rides back (snapshots).
    */
   const REMOTE = !!window.__SWT_REMOTE;  // this page IS the Calling window
-  const HOSTED = !!window.__SWT_HOSTED;  // the SURE Walk Texts add-in (its own site): can open the Calling window
+  const HOSTED = () => !!window.__SWT_HOSTED; // the SURE Walk Texts add-in (its own site): can open the Calling window
   const GROUP_COLORS = { A: '#ff9500', B: '#af52de', C: '#34a853', D: '#007aff', E: '#e8467c', F: '#00a3a3', G: '#8d6e63', H: '#5c6bc0' };
   const ACCENTS = { orange: ['Burnt orange', '#bf5700', '#ff8a3d'], blue: ['Blue', '#1565c0', '#64b5f6'], green: ['Green', '#2e7d32', '#66bb6a'], purple: ['Purple', '#6a1b9a', '#ce93d8'] };
   const MASCOTS = {
@@ -1042,8 +1042,8 @@
     if (REMOTE) return;
     if (dlg) return toast('Calling is already open in its own window.');
     const ui = window.Office && Office.context && Office.context.ui;
-    if (HOSTED && ui && ui.displayDialogAsync) {
-      ui.displayDialogAsync(new URL('calling.html', location.href).href, { height: 82, width: 72, displayInIframe: false }, res => {
+    if (HOSTED() && ui && ui.displayDialogAsync) {
+      ui.displayDialogAsync(window.SWT_TEST && T.callingUrl ? T.callingUrl : new URL('calling.html', location.href).href, { height: 82, width: 72, displayInIframe: false }, res => {
         if (res.status !== Office.AsyncResultStatus.Succeeded) { openInPane(); toast("Excel couldn't open a window: Calling is open here instead."); return; }
         dlg = res.value; dlgSent = '';
         dlg.addEventHandler(Office.EventType.DialogMessageReceived, a => onChild(a.message));
@@ -1075,7 +1075,7 @@
       else if (dlg) chunks(obj).forEach(c => dlg.messageChild(c));
     } catch (e) { /* the window closed */ }
   }
-  function snapshot() {
+  function snapState() { // the rides + settings the Calling window shows
     if (!X) return { err: loadErr || 'Loading…' };
     return { name: X.name, col: { txs: !!X.col.txs, eid: !!X.col.eid, email: !!X.col.email }, err: loadErr,
       rides: X.tonight.map(r => ({ id: r.id, row: r.row, f: r.f, notes: r.notes || '' })),
@@ -1083,7 +1083,7 @@
   }
   function pushSnap(force) {
     if (!dlg) return;
-    const s = snapshot(), j = JSON.stringify(s);
+    const s = snapState(), j = JSON.stringify(s);
     if (!force && j === dlgSent) return;
     dlgSent = j; send({ t: 'snap', s });
   }

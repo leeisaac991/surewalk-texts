@@ -25,7 +25,7 @@ const gm = http.createServer(async (req, res) => {
   const u = new URL(req.url, 'http://x'), cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': 'GET,POST' };
   const send = (code, body, type = 'application/json') => { res.writeHead(code, Object.assign({ 'Content-Type': type }, cors)); res.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body)); };
   if (req.method === 'OPTIONS') return send(204, '');
-  if (u.pathname === '/panel') return send(200, panelPage(u.searchParams.get('click')), 'text/html');
+  if (u.pathname === '/panel') return send(200, u.searchParams.get('remote') ? callingPage() : panelPage(u.searchParams.get('click')), 'text/html');
   if (u.pathname.startsWith('/files/')) return send(200, fs.readFileSync(path.join(ROOT, u.pathname.slice(7))), 'text/javascript');
   if (u.pathname === '/v3/groups') return send(200, { response: [{ id: 'g1', name: 'SURE Walk Texts sync' }] });
   const m = /^\/v3\/groups\/g1\/messages$/.exec(u.pathname);
@@ -73,6 +73,17 @@ const SHEET = { rows: [HEADER,
   ride(2, 2, 'Ben', 'Ortiz', '5125550102', 'Kins', 'Duren'),
   ride(3, 10, 'Cara', 'Wu', '5125550103', 'Gregory Gym', 'Dobie', { rsn: 'Not Ready' }),
 ], paint: [[4, '#000000', '#FFFFFF']], table: !!process.env.TABLE }; // TABLE=1: the rides are an Excel table
+// The Calling window (the add-in opens it with Excel's dialog API): the same files in "remote" mode, with a stand-in
+// for Office's dialog messaging; the side panel's stand-in (installed by the test) loads this page in a frame.
+function callingPage() {
+  const html = fs.readFileSync(path.join(ROOT, 'excel/panel.html'), 'utf8');
+  return `<!doctype html><html><head><meta charset="utf-8"></head><body>${html}
+<script>window.FAKE_SHEET = { rows: [] }; window.__SWT_REMOTE = true; window.SWT_TEST = { tick: 1000 };</script>
+<script src="/files/test/fake-excel.js"></script>
+<script>Office.EventType = { DialogParentMessageReceived: 'p' };
+Office.context = { ui: { addHandlerAsync(t, h, cb) { window.__fromParent = m => h({ message: m }); if (cb) cb({ status: 'succeeded' }); }, messageParent(m) { parent.__dlgMsg(m); } } };</script>
+<script src="/files/protocol.js"></script><script src="/files/excel/panel.js"></script></body></html>`;
+}
 function panelPage(click) {
   const html = fs.readFileSync(path.join(ROOT, 'excel/panel.html'), 'utf8');
   const clock = `(() => { const R = Date, T0 = ${NOW}, R0 = R.now(); window.Date = class extends R { constructor(...a) { super(...(a.length ? a : [T0 + R.now() - R0])); } static now() { return T0 + R.now() - R0; } }; })();`;
@@ -393,6 +404,50 @@ ok(!JSON.stringify(etaRows()).match(/Lia|Eta"|5550180|Stone|5550101/), 'no names
 ok((fs.statSync(path.join(TMP, 'state', 'eta.json')).mode & 0o077) === 0, 'eta.json readable only by the user');
 ok((await rpc('getState')).etaUrl === '/eta.csv', 'Settings links the ETA log');
 ok((await (await fetch(`http://127.0.0.1:${SPORT}/eta.csv`)).text()).startsWith('Night,Row,Requested'), '/eta.csv downloads it');
+
+console.log('👥 traveling together (group letter in the Confirmed column) + Mark not ADA');
+const idOf = phone => B.js(`(SWT.X.rides.find(x => x.f.phone === '${phone}') || {}).id`);
+const ivyId = await idOf('5125550162'), joId = await idOf('5125550170');
+const ivyRow = await sheetRowOf('5125550162'), joRow = await sheetRowOf('5125550170');
+const ADA = L(idx(/^Do you require/));
+if (C.txs) {
+  await B.js(`SWT.cl.filter = 'all'; SWT.choose(${JSON.stringify(ivyId)}, false); document.querySelector('#selRide [data-a=pick]').click(), 1`); await sleep(200);
+  await B.js(`document.querySelector('#selRide [data-pick="${joId}"]').click(), 1`); await sleep(100);
+  await B.js(`document.querySelector('#selRide [data-a=groupGo]').click(), 1`);
+  const grp = await until(() => B.js(`(() => { const a = __xl.text(${ivyRow},'${C.txs}'), b = __xl.text(${joRow},'${C.txs}'); return /^Group [A-H]$/.test(a) && a === b.replace(/^.* · /, '') && a; })()`), 'Ivy + Jo grouped: same "Group X" in their Confirmed cells');
+  ok(await B.js(`/👥 [A-H] · 2/.test(document.getElementById('list').textContent) && !!document.querySelector('#selRide .gcard')`), 'group badge in the list, group card on the ride');
+  await sleep(2500); // the group reaches the texting computer through the chat
+  const jy = await bridge([{ id: 'grp1', from: '+15125550170', text: 'yes', ts: NOW + 400e3 }]);
+  await bridge([], (jy.outbox || []).map(o => ({ outId: o.outId, status: 'sent' })));
+  await until(() => B.js(`/^\\d{1,2}:\\d{2} · ${grp}$/.test(__xl.text(${joRow},'${C.txs}'))`), `Jo says YES: the texting computer's time joins the group ("H:MM · ${grp}")`);
+  await B.js(`SWT.choose(${JSON.stringify(ivyId)}, false); document.querySelector('#selRide [data-a=ungroup][data-id="${ivyId}"]').click(), 1`);
+  await until(() => B.js(`__xl.text(${ivyRow},'${C.txs}') === '' && /^\\d{1,2}:\\d{2}$/.test(__xl.text(${joRow},'${C.txs}'))`), 'removing Ivy dissolves a group of 2: Ivy blank, Jo keeps only the time');
+}
+await B.js(`SWT.cl.filter = 'all'; SWT.choose(${JSON.stringify(joId)}, false), 1`); await sleep(200);
+await B.js(`document.querySelector('#selRide [data-a=notAda]').click(), 1`);
+await until(() => B.js(`__xl.text(${joRow},'${ADA}') === 'No'`), 'Mark not ADA: the ADA cell becomes No');
+
+console.log('Calling in its own window (Excel dialog stand-in): the side panel does the sheet work');
+await B.js(`(() => {
+  SWT.closeCalling(); window.__SWT_HOSTED = true; window.SWT_TEST.callingUrl = '/panel?remote=1';
+  Office.EventType = { DialogMessageReceived: 'm', DialogEventReceived: 'e' }; Office.AsyncResultStatus = { Succeeded: 'succeeded' };
+  Office.context = { ui: { displayDialogAsync(url, o, cb) {
+    const f = document.createElement('iframe'); f.id = 'dlgFrame'; f.src = url; f.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;border:0;z-index:99;background:#fff';
+    const hs = {}; window.__dlgMsg = m => { if (hs.m) hs.m({ message: m }); };
+    document.body.appendChild(f);
+    cb({ status: 'succeeded', value: { addEventHandler(t, h) { hs[t] = h; }, messageChild(m) { if (f.contentWindow.__fromParent) f.contentWindow.__fromParent(m); }, close() { f.remove(); if (hs.e) hs.e({}); } } });
+  } } };
+  SWT.openCalling(); return 1; })()`);
+const W = `document.getElementById('dlgFrame').contentWindow`;
+await until(() => B.js(`!!document.getElementById('dlgFrame') && ${W}.document.querySelectorAll('#list .crow').length > 0 && ${W}.document.getElementById('home').hidden !== undefined`), 'the Calling window opens and gets the rides from the side panel');
+ok(await B.js(`document.getElementById('calling').hidden && getComputedStyle(${W}.document.getElementById('home')).display === 'none'`), 'side panel keeps its launcher; the window shows only Calling');
+const hRow = await sheetRowOf('5125550162');
+await B.js(`${W}.SWT.cl.filter = 'all'; ${W}.SWT.choose(${JSON.stringify(ivyId)}, false); 1`); await sleep(300);
+await B.js(`${W}.document.querySelector('#selRide [data-a=called]').click(), 1`);
+await until(() => B.js(`/^\\d{1,2}:\\d{2}$/.test(__xl.text(${hRow},'${C.call}'))`), 'Mark called in the window: the side panel writes the Call Time');
+await until(() => B.js(`/Ivy/.test(${W}.document.getElementById('toastTxt').textContent) && !${W}.document.getElementById('toastUndo').hidden`), 'the window shows the toast with Undo');
+await B.js(`${W}.document.getElementById('toastUndo').click(), 1`);
+await until(() => B.js(`__xl.text(${hRow},'${C.call}') === ''`), 'Undo from the window puts the sheet back');
 
 console.log('privacy');
 const all = evs();

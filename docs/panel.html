@@ -121,6 +121,7 @@
   .ct { display: flex; align-items: center; gap: 10px; height: 54px; padding: 0 12px 0 16px; background: var(--card); border-bottom: 1px solid var(--line); flex: none; }
   .ct h1 { font-size: 17px; margin: 0; white-space: nowrap; }
   .ct .q { width: 250px; max-width: 34vw; }
+  .ct .btn { white-space: nowrap; flex: none; }
   .cbody { flex: 1; min-height: 0; display: grid; grid-template-columns: 350px minmax(0, 1fr); }
   .clist { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; background: var(--card); }
   .cpills { display: flex; gap: 6px; padding: 10px 12px; flex-wrap: wrap; }
@@ -184,7 +185,8 @@
   .nobody h3 { font-size: 20px; margin: 0; }
   @media (max-width: 760px) { /* narrow (the side panel in Script Lab): the list, or one ride */
     .cbody { grid-template-columns: 1fr; } .call.has-sel .clist { display: none; } .call:not(.has-sel) .cdet { display: none; }
-    .cback { display: inline-block; } .ct .q { width: 120px; } .ct .hide-n { display: none; } .rte { grid-template-columns: 1fr; } .rarrow { display: none; }
+    .cback { display: inline-block; } .ct { gap: 6px; padding: 0 6px 0 12px; } .ct .q { width: 110px; } .ct .hide-n { display: none; } .ct .btn { padding: 7px 10px; }
+    .rte { grid-template-columns: 1fr; } .rarrow { display: none; }
   }
 
   /* ---------- ＋ Ride (dialog) ---------- */
