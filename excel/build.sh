@@ -18,22 +18,24 @@ cp "$ROOT/manifest.xml" "$DOCS/"
 cp "$HERE/assets/"*.png "$DOCS/assets/"
 touch "$DOCS/.nojekyll"
 
-# Assemble taskpane.html
-cat > "$DOCS/taskpane.html" <<HTML
+# The add-in's pages: taskpane.html (the side panel) and calling.html (the Calling window, opened by the side panel
+# with Excel's dialog API). Both load the same three files; a flag tells the panel which one it is.
+page() { # page <file> <title> <flag>
+cat > "$DOCS/$1" <<HTML
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>SURE Walk Texts</title>
+  <title>$2</title>
   <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
   <style>body { margin: 0; font: 14px "Segoe UI", system-ui, sans-serif; }</style>
 </head>
 <body>
-<div id="loading" style="padding:24px;color:#6e6e73">Loading SURE Walk Texts…</div>
+<div id="loading" style="padding:24px;color:#6e6e73">Loading $2…</div>
 <script>
-  // The SURE Walk Texts add-in side panel: every file is fetched fresh (never a stale browser copy),
-  // so a reopen or restart always gets the newest panel.
+  // Every file is fetched fresh (never a stale browser copy), so a reopen or restart always gets the newest panel.
+  window.$3 = true;
   (async () => {
     const get = async f => { const r = await fetch(f, { cache: 'no-cache' }); if (!r.ok) throw new Error(f + ' (' + r.status + ')'); return r.text(); };
     try {
@@ -52,5 +54,8 @@ cat > "$DOCS/taskpane.html" <<HTML
 </body>
 </html>
 HTML
+}
+page taskpane.html "SURE Walk Texts" __SWT_HOSTED
+page calling.html "SURE Walk Calling" __SWT_REMOTE
 
 echo "built $OUT and $DOCS"
