@@ -12,7 +12,7 @@
  *      'add'   (texting server only) "please add this ride to the sheet": a ride entered by hand on the texting
  *              computer's dashboard. id = 'a…' (the request, not a ride). The Excel panel with sync on writes the row
  *              (once: Notes carries "#<id>"), then posts it as a normal 'ride'. Older panels ignore it.
- *              f: ts (when asked), first, last, phone, eid, pu, do, ada, notes, call, disp.
+ *              f: ts (when asked), first, last, phone, eid, email, pu, do, ada, notes, call, disp.
  *   src: 's' = the texting server, 'x…' = an Excel panel.
  *   f (fields, all strings): ts (Austin wall clock "YYYY-MM-DD HH:MM:SS"), row (sheet row), first, last, phone,
  *      pu (pick-up), do (drop-off), ada, disp (Dispatcher), call (Call Time H:MM), arr (Arrival H:MM), loc, van, drv,
@@ -25,7 +25,7 @@
   const TAG = '‹sw1›';
   const MAX = 990; // GroupMe allows 1,000 characters per message
   const FIELDS = ['ts', 'row', 'first', 'last', 'phone', 'pu', 'do', 'ada', 'disp', 'call', 'arr', 'loc', 'van', 'drv', 'nav', 'rsn', 'bg'];
-  const ADD_FIELDS = ['ts', 'first', 'last', 'phone', 'eid', 'pu', 'do', 'ada', 'notes', 'call', 'disp'];
+  const ADD_FIELDS = ['ts', 'first', 'last', 'phone', 'eid', 'email', 'pu', 'do', 'ada', 'notes', 'call', 'disp'];
   const LIMIT = 160; // longest value we send for one field
 
   const clean = v => String(v == null ? '' : v).replace(/[\r\n]+/g, ' ').split(TAG).join('').slice(0, LIMIT);

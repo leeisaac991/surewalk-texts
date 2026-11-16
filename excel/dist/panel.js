@@ -64,6 +64,8 @@
     ['last', /^last name/], ['first', /^first name/], ['phone', /^phone/], ['pu', /^pick ?-?up/], ['do', /^drop ?-?off/],
     ['ada', /disabilit|^ada\b/], ['loc', /^location$/], ['van', /^(van|vehicle)/], ['drv', /^driver$/], ['nav', /^navigator$/],
     ['rsn', /^reason/], ['rsn', /cancel/], ['eid', /^(ut )?eid/], ['notes', /^notes?$/],
+    // the rider's email ("Email Address:"; the plain "Email" column is the Forms account) and the form's three agreements
+    ['email', /^email address/], ['agree', /^i have read the updated rules/], ['verified', /^all pick ?-?up locations/], ['food', /food establishment/],
   ];
   function layoutOf(header) {
     const h = header.map(x => String(x || '').toLowerCase().replace(/[^a-z0-9 -]/g, ' ').replace(/\s+/g, ' ').trim());
@@ -318,6 +320,9 @@
    * unless "called" is ticked.
    */
   const wallToSerial = w => wallMs(w) / 864e5 + 25569;
+  // What the form writes in its three agreement columns: a ride added by hand gets the same answers.
+  const AGREE = { agree: 'I agree and adhere to the rules and guidelines laid out above.',
+    verified: 'I understand and have verified my pick-up location.', food: 'I understand.' };
   async function addRide(a, quiet) { // a: first last phone eid pu do ada notes, call ('H:MM' or ''), disp, by
     await readSheet();
     const col = X.col, w = SWP.austin(), lastRide = X.rides.length ? Math.max(...X.rides.map(r => r.row)) : 0;
@@ -327,7 +332,8 @@
       if (col[k] && v !== '' && v != null) vals[col[k]] = v;
     };
     if (col.ts) put('ts', wallToSerial(w)); else { put('date', Math.floor(wallToSerial(w))); put('stime', hmToSerial(`${+w.slice(11, 13)}:${w.slice(14, 16)}`)); }
-    ['first', 'last', 'phone', 'eid', 'pu', 'do', 'ada'].forEach(k => put(k, a[k]));
+    ['first', 'last', 'phone', 'eid', 'email', 'pu', 'do', 'ada'].forEach(k => put(k, a[k]));
+    Object.keys(AGREE).forEach(k => put(k, AGREE[k]));
     if (/^\d{1,2}:\d{2}$/.test(a.call || '')) { put('call', hmToSerial(a.call)); put('disp', a.disp); }
     put('notes', [a.by || `Added in the Texts panel${set.name ? ' by ' + set.name : ''}`, a.notes].filter(Boolean).join(' — '));
     const timeFmt = { ts: 'm/d/yyyy h:mm', date: 'm/d/yyyy', stime: 'h:mm AM/PM', call: 'h:mm' };
@@ -658,6 +664,7 @@
     $('addCard').querySelectorAll('input:not([type=checkbox]), textarea').forEach(el => { el.value = ''; });
     $('aAda').value = 'No'; $('aCalled').checked = false; $('aMsg').textContent = '';
     $('aEidRow').hidden = !!(X && !X.col.eid);
+    $('aEmailRow').hidden = !!(X && !X.col.email);
     $('aFirst').focus();
   }
   $('addBtn').addEventListener('click', () => showAdd($('addCard').hidden));
@@ -668,11 +675,12 @@
     let phone = g('aPhone').replace(/\D/g, '');
     if (phone.length === 11 && phone.charAt(0) === '1') phone = phone.slice(1);
     const called = $('aCalled').checked;
-    const a = { first: g('aFirst'), last: g('aLast'), phone, eid: g('aEid'), pu: g('aPu'), do: g('aDo'), ada: $('aAda').value, notes: g('aNotes'),
+    const a = { first: g('aFirst'), last: g('aLast'), phone, eid: g('aEid'), email: g('aEmail'), pu: g('aPu'), do: g('aDo'), ada: $('aAda').value, notes: g('aNotes'),
       call: called ? nowHM() : '', disp: called ? set.name : '' };
     const miss = [['first', 'first name'], ['pu', 'pick-up'], ['do', 'drop-off']].filter(([k]) => !a[k]).map(x => x[1]);
     if (miss.length) { $('aMsg').textContent = 'Fill in the ' + miss.join(', ') + '.'; return; }
     if (phone.length !== 10) { $('aMsg').textContent = 'The phone number needs 10 digits.'; return; }
+    if (a.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(a.email)) { $('aMsg').textContent = "That email doesn't look right."; return; }
     const same = X && X.tonight.find(r => stateOf(r) === 'open' && r.f.phone.replace(/\D/g, '').slice(-10) === phone);
     if (same && !confirm(`${who(same.f)} already has an open ride tonight with that phone (row ${same.row}). Add another one anyway?`)) return;
     await addRide(a);
