@@ -6,7 +6,7 @@
  *   SpreadsheetApp     -> openById(<the master sheet>) = a virtual sheet over the rides from the GroupMe sync chat;
  *                         every write is recorded (takeChanges) and sent back to the Excel sheet through GroupMe.
  *                         create()/openById(<log id>) = the message log, <state>/messages.jsonl — it never leaves
- *                         this computer.
+ *                         this computer. create('SURE Walk Poll' / 'SURE Walk ETA') = poll.json / eta.json.
  * Installs them as globals (the .gs files expect that). Needs TZ=America/Chicago.
  */
 'use strict';
@@ -14,7 +14,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-const LOG_ID = 'local-log', POLL_ID = 'local-poll';
+const LOG_ID = 'local-log', POLL_ID = 'local-poll', ETA_ID = 'local-eta';
 const W = 23; // A:W of the old Google sheet layout (CFG.LAST_COL)
 // old-layout column -> sync field (protocol.js)
 const COLS = { 1: 'ts', 2: 'disp', 3: 'call', 4: 'arr', 7: 'last', 8: 'first', 9: 'phone', 10: 'pu', 11: 'do', 12: 'ada',
@@ -97,30 +97,36 @@ function install(stateDir, store) {
   });
   const logBook = { getId: () => LOG_ID, getSheets: () => [logSheet], getSheetByName: n => (n === 'Messages' ? logSheet : null), getUrl: () => '/log.csv' };
 
-  /* ---------- the poll answers (SpreadsheetApp.create('SURE Walk Poll')): a local file, rows by index ---------- */
-  const pollFile = path.join(stateDir, 'poll.json');
-  const pollRows = () => { try { return JSON.parse(fs.readFileSync(pollFile, 'utf8')); } catch (e) { return []; } };
-  const pollSheet = chain({
-    getName: () => 'Answers', setName() { return pollSheet; }, setFrozenRows() { return pollSheet; },
-    getLastRow: () => pollRows().length,
-    getRange(row, col, n, w) {
-      return chain({
-        self: null,
-        setValues(vals) {
-          const all = pollRows();
-          vals.forEach((line, i) => {
-            const r = row - 1 + i;
-            while (all.length <= r) all.push([]);
-            line.forEach((v, j) => { all[r][col - 1 + j] = v instanceof Date ? v.toISOString() : v; });
-          });
-          write(pollFile, JSON.stringify(all));
-          return this;
-        },
-        getValues() { return pollRows().slice(row - 1, row - 1 + (n || 1)).map(l => { const o = []; for (let j = 0; j < (w || 1); j++) o.push(l[col - 1 + j] == null ? '' : l[col - 1 + j]); return o; }); },
+  /* ---------- small local "spreadsheets" (rows by index in a JSON file, only this user can read it) ----------
+   * SpreadsheetApp.create('SURE Walk Poll') -> <state>/poll.json (/poll.csv), create('SURE Walk ETA') -> eta.json (/eta.csv) */
+  function localBook(id, file, tab, url) {
+    const rowsOf = () => { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { return []; } };
+    const put = (row, col, vals) => {
+      const all = rowsOf();
+      vals.forEach((line, i) => {
+        const r = row - 1 + i;
+        while (all.length <= r) all.push([]);
+        line.forEach((v, j) => { all[r][col - 1 + j] = v instanceof Date ? v.toISOString() : v; });
       });
-    },
-  });
-  const pollBook = { getId: () => POLL_ID, getSheets: () => [pollSheet], getSheetByName: n => (n === 'Answers' ? pollSheet : null), getUrl: () => '/poll.csv' };
+      write(file, JSON.stringify(all));
+    };
+    const sheet = chain({
+      getName: () => tab, setName() { return sheet; }, setFrozenRows() { return sheet; },
+      getLastRow: () => rowsOf().length,
+      getRange(row, col, n, w) {
+        return chain({
+          self: null,
+          setValues(vals) { put(row, col, vals); return this; },
+          setValue(v) { put(row, col, [[v]]); return this; },
+          getValues() { return rowsOf().slice(row - 1, row - 1 + (n || 1)).map(l => { const o = []; for (let j = 0; j < (w || 1); j++) o.push(l[col - 1 + j] == null ? '' : l[col - 1 + j]); return o; }); },
+        });
+      },
+    });
+    return { rows: rowsOf, book: { getId: () => id, getSheets: () => [sheet], getSheetByName: n => (n === tab ? sheet : null), getUrl: () => url } };
+  }
+  const poll = localBook(POLL_ID, path.join(stateDir, 'poll.json'), 'Answers', '/poll.csv');
+  const eta = localBook(ETA_ID, path.join(stateDir, 'eta.json'), 'ETA', '/eta.csv');
+  const pollRows = poll.rows, pollBook = poll.book;
 
   /* ---------- the master sheet: a virtual sheet over the synced rides ---------- */
   let changes = []; // { id, k, was, now }
@@ -191,14 +197,15 @@ function install(stateDir, store) {
   const masterBook = { getId: () => 'excel', getSheets: () => [master], getSheetByName: () => master };
 
   global.SpreadsheetApp = {
-    openById: id => (id === LOG_ID ? logBook : id === POLL_ID ? pollBook : masterBook),
-    create: name => (/poll/i.test(String(name)) ? pollBook : logBook),
+    openById: id => (id === LOG_ID ? logBook : id === POLL_ID ? pollBook : id === ETA_ID ? eta.book : masterBook),
+    create: name => (/poll/i.test(String(name)) ? pollBook : /eta/i.test(String(name)) ? eta.book : logBook),
     flush() {},
   };
 
   return {
     LOG_ID,
     pollRows,
+    etaRows: eta.rows,
     /** The sheet edits the texting code made since the last call, merged per ride + field. */
     takeChanges() {
       const by = new Map();
