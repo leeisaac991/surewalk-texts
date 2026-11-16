@@ -294,11 +294,7 @@
   }
 
   const who = f => [f.first, f.last].filter(Boolean).join(' ') || 'row ' + f.row;
-  const markCalled = r => {
-    const keys = ['call'], withName = !!set.name && !r.f.disp; // your name (Settings › You) goes in Dispatcher
-    if (withName) keys.push('disp');
-    return act(r, 'Marked called ' + ampm(nowHM()), keys, false, ws => { writeField(ws, r.row, 'call', nowHM()); if (withName) writeField(ws, r.row, 'disp', set.name); });
-  };
+  const markCalled = r => act(r, 'Marked called ' + ampm(nowHM()), ['call'], false, ws => writeField(ws, r.row, 'call', nowHM()));
   const cancelRide = (r, reason) => act(r, 'Cancelled (' + reason + ')', ['disp', 'call', 'arr', 'loc', 'van', 'drv', 'nav', 'rsn'], true, ws => {
     // like the dispatch panel: clear Dispatcher → Arrival and Location → Navigator, reason, whole row black
     ['disp', 'call', 'arr', 'loc', 'van', 'drv', 'nav'].forEach(k => writeField(ws, r.row, k, ''));
@@ -380,7 +376,7 @@
     ['first', 'last', 'phone', 'eid', 'email', 'pu', 'do', 'ada'].forEach(k => put(k, a[k]));
     Object.keys(AGREE).forEach(k => put(k, AGREE[k]));
     if (/^\d{1,2}:\d{2}$/.test(a.call || '')) { put('call', hmToSerial(a.call)); put('disp', a.disp); }
-    put('notes', [a.by || `Added in the Texts panel${set.name ? ' by ' + set.name : ''}`, a.notes].filter(Boolean).join(' — '));
+    put('notes', [a.by || 'Added in the Texts panel', a.notes].filter(Boolean).join(' — '));
     const timeFmt = { ts: 'm/d/yyyy h:mm', date: 'm/d/yyyy', stime: 'h:mm AM/PM', call: 'h:mm' };
     const row = await Excel.run(async ctx => {
       const ws = await sheetOf(ctx, true);
@@ -869,11 +865,11 @@
   }
 
   /* ---------- Settings: You / Appearance / Sheet (save as they change) ---------- */
-  let setSec = 'you';
+  let setSec = 'look';
   function showSettings(on) {
     $('setModal').hidden = !on;
     if (!on) return;
-    $('setName').value = set.name || ''; $('setTab').value = set.tab || '';
+    $('setTab').value = set.tab || '';
     renderSettings();
   }
   function renderSettings() {
@@ -885,7 +881,6 @@
   }
   const setChange = patch => { if (REMOTE) { Object.assign(set, patch); applyAppearance(); renderSettings(); renderCalling(true); api('settings', patch).catch(() => {}); } else { saveSettings(patch); renderSettings(); } };
   document.querySelectorAll('.mnav button').forEach(b => b.addEventListener('click', () => { setSec = b.dataset.sc; renderSettings(); }));
-  $('setName').addEventListener('change', () => setChange({ name: $('setName').value.trim() }));
   $('setTab').addEventListener('change', () => setChange({ tab: $('setTab').value.trim() }));
   $('themeSeg').addEventListener('click', e => { const b = e.target.closest('[data-th]'); if (b) setChange({ theme: b.dataset.th }); });
   $('accRow').addEventListener('click', e => { const b = e.target.closest('[data-acc]'); if (b) setChange({ accent: b.dataset.acc }); });
@@ -1058,7 +1053,7 @@
     if (phone.length === 11 && phone.charAt(0) === '1') phone = phone.slice(1);
     const called = $('aCalled').checked;
     const a = { first: g('aFirst'), last: g('aLast'), phone, eid: g('aEid'), email: g('aEmail'), pu: g('aPu'), do: g('aDo'), ada: $('aAda').value, notes: g('aNotes'),
-      call: called ? nowHM() : '', disp: called ? set.name : '' };
+      call: called ? nowHM() : '', disp: '' };
     const miss = [['first', 'first name'], ['pu', 'pick-up'], ['do', 'drop-off']].filter(([k]) => !a[k]).map(x => x[1]);
     if (miss.length) { $('aMsg').textContent = 'Fill in the ' + miss.join(', ') + '.'; return; }
     if (phone.length !== 10) { $('aMsg').textContent = 'The phone number needs 10 digits.'; return; }
@@ -1115,7 +1110,7 @@
     if (!X) return { err: loadErr || 'Loading…' };
     return { name: X.name, col: { txs: !!X.col.txs, eid: !!X.col.eid, email: !!X.col.email }, err: loadErr,
       rides: X.tonight.map(r => ({ id: r.id, row: r.row, f: r.f, notes: r.notes || '' })),
-      set: { name: set.name, tab: set.tab, theme: set.theme, accent: set.accent, mascot: set.mascot } };
+      set: { tab: set.tab, theme: set.theme, accent: set.accent, mascot: set.mascot } };
   }
   function pushSnap(force) {
     if (!dlg) return;
