@@ -188,7 +188,7 @@ await B.js(`__xl.row(5, ${JSON.stringify(ride(4, 0, 'Dee', 'Park', '5125550104',
 await B.js(`__xl.click(5)`);
 await until(() => B.js(`!!document.querySelector('#selRide [data-a=called]:not([disabled])') && document.getElementById('cName').textContent.includes('Dee')`), 'Dee selected');
 await B.js(`document.querySelector('#selRide [data-a=called]').click()`);
-await until(() => B.js(`__xl.text(5,'${C.call}') === '22:00' && __xl.text(5,'${C.disp}') === 'T. Tester'`), 'Mark called: F5 = now, Dispatcher = my name');
+await until(() => B.js(`__xl.text(5,'${C.call}') === '22:00' && __xl.text(5,'${C.disp}') === ''`), 'Mark called: F5 = now, Dispatcher left as it was');
 await until(async () => { const r = await rideOf('5125550104'); return r && r.call === '22:00'; }, 'texting server sees Dee as called');
 res = await bridge();
 ok(!(res.outbox || []).some(o => o.to.endsWith('5550104')), 'Dee is not texted');
@@ -329,7 +329,7 @@ ok(await B.js(`/email/.test(document.getElementById('aMsg').textContent) && !doc
 await B.js(`document.getElementById('aEmail').value = 'gus.hand@utexas.edu'; document.getElementById('aSave').click()`);
 const nr = before + 1;
 await until(() => B.js(`__xl.text(${nr},'${C.first}') === 'Gus'`), `manual ride written to row ${nr}`);
-ok(await B.js(`__xl.text(${nr},'A') === '' && /^Added in the Texts panel by T\. Tester — called the line$/.test(__xl.text(${nr},'${L(idx(/^Notes/))}')) && __xl.text(${nr},'${L(idx(/^UT EID/))}') === 'gh123' && __xl.text(${nr},'${L(idx(/^Do you require/))}') === 'Yes'`), 'Id blank; EID, ADA and Notes (who added it) filled');
+ok(await B.js(`__xl.text(${nr},'A') === '' && /^Added in the Texts panel — called the line$/.test(__xl.text(${nr},'${L(idx(/^Notes/))}')) && __xl.text(${nr},'${L(idx(/^UT EID/))}') === 'gh123' && __xl.text(${nr},'${L(idx(/^Do you require/))}') === 'Yes'`), 'Id blank; EID, ADA and Notes (who added it) filled');
 ok(await B.js(`__xl.text(${nr},'${L(idx(/^Email Address/))}') === 'gus.hand@utexas.edu'`), 'email filled');
 ok(await B.js(`__xl.text(${nr},'${L(idx(/^I have read/))}') === 'I agree and adhere to the rules and guidelines laid out above.' && __xl.text(${nr},'${L(idx(/^All pick up/))}') === 'I understand and have verified my pick-up location.' && __xl.text(${nr},'${L(idx(/food establishment/))}') === 'I understand.'`), 'the three agreements filled like the form');
 ok(await B.js(`(() => { const r = SWT.X.byRow.get(${nr}); return !!r && r.id.charAt(0) === 't' && r.f.ts.slice(0, 16) === SWP.austin().slice(0, 16) && r.f.phone === '5125550160'; })()`), 'the row reads back as tonight\'s ride, submitted now');
@@ -340,7 +340,7 @@ await bridge([], gus ? [{ outId: gus.outId, status: 'sent' }] : []);
 await B.js(`document.querySelector('#selRide [data-a=called]').click()`);
 await until(() => B.js(`__xl.text(${nr},'${C.call}') === '22:00' || /^[0-9]+:[0-9][0-9]$/.test(__xl.text(${nr},'${C.call}'))`), 'panel actions work on a row without an Id (Mark called)');
 await addRide({ aFirst: 'Hal', aLast: 'Phone', aPhone: '5125550161', aPu: 'PCL', aDo: 'Kins' }, true);
-await until(() => B.js(`__xl.text(${nr + 1},'${C.first}') === 'Hal' && __xl.text(${nr + 1},'${C.disp}') === 'T. Tester' && /^[0-9]+:[0-9][0-9]$/.test(__xl.text(${nr + 1},'${C.call}'))`), '"mark called now": Call Time + Dispatcher filled');
+await until(() => B.js(`__xl.text(${nr + 1},'${C.first}') === 'Hal' && __xl.text(${nr + 1},'${C.disp}') === '' && /^[0-9]+:[0-9][0-9]$/.test(__xl.text(${nr + 1},'${C.call}'))`), '"mark called now": Call Time + Dispatcher filled');
 await until(async () => { const r = await rideOf('5125550161'); return r && r.call; }, 'texting server sees Hal as called');
 ok(!((await bridge()).outbox || []).some(o => o.to.endsWith('5550161')), 'Hal is not texted');
 await B.js(`window.confirm = () => false`);
