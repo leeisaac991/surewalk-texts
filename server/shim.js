@@ -71,6 +71,7 @@
   async function addRide() {
     if (typeof window.ask !== 'function') return say('The dashboard is still loading.', 'warn');
     var html = field('swaFirst', 'First name') + field('swaLast', 'Last name') + field('swaPhone', 'Phone', ' type="tel" inputmode="numeric" placeholder="10 digits"') +
+      '<div id="swaPrior" style="display:none;margin-top:8px;padding:8px 10px;background:var(--fill);border-radius:8px;font-size:12px;border:1px solid var(--sep)"></div>' +
       field('swaEid', 'UT EID (or N/A)') + field('swaEmail', 'Email (optional)', ' type="email"') + field('swaPu', 'Pick-up') + field('swaDo', 'Drop-off') +
       '<label style="display:grid;gap:3px;margin-top:8px;font-size:12px;color:var(--muted)">ADA assistance<select id="swaAda" style="width:100%"><option>No</option><option>Yes</option></select></label>' +
       field('swaNotes', 'Notes (optional)') +
@@ -79,6 +80,49 @@
     setTimeout(function () {
       FIELDS.forEach(function (i) { var el = document.getElementById(i); if (el && draft[i]) el.value = draft[i]; });
       var f = document.getElementById('swaFirst'); if (f) f.focus();
+      var phInput = document.getElementById('swaPhone');
+      if (phInput) {
+        phInput.addEventListener('input', async function () {
+          var box = document.getElementById('swaPrior');
+          if (!box) return;
+          var phone = phInput.value.replace(/\D/g, '');
+          if (phone.length === 11 && phone.charAt(0) === '1') phone = phone.slice(1);
+          if (phone.length !== 10) { box.style.display = 'none'; box.innerHTML = ''; return; }
+          try {
+            var res = await post('/api/lookupRider', { phone: phone });
+            if (!res.ok || !res.candidates || !res.candidates.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
+            box.style.display = 'block';
+            var cands = res.candidates;
+            function fill(c) {
+              if (c.first) { var el = document.getElementById('swaFirst'); if (el) el.value = c.first; }
+              if (c.last) { var el = document.getElementById('swaLast'); if (el) el.value = c.last; }
+              if (c.eid) { var el = document.getElementById('swaEid'); if (el) el.value = c.eid; }
+              if (c.email) { var el = document.getElementById('swaEmail'); if (el) el.value = c.email; }
+              if (c.pu) { var el = document.getElementById('swaPu'); if (el && !el.value.trim()) el.value = c.pu; }
+              if (c.do) { var el = document.getElementById('swaDo'); if (el && !el.value.trim()) el.value = c.do; }
+              if (c.ada) { var el = document.getElementById('swaAda'); if (el) el.value = /yes/i.test(c.ada) ? 'Yes' : 'No'; }
+              var st = document.getElementById('swaPriorStatus');
+              if (st) st.textContent = '✓ Filled for ' + c.fullName;
+            }
+            if (cands.length === 1) {
+              var c = cands[0];
+              box.innerHTML = '<div style="font-weight:600;display:flex;justify-content:space-between"><span>Found prior rider (' + c.count + ' rides):</span><span id="swaPriorStatus" style="color:var(--green)"></span></div>' +
+                '<div style="margin:4px 0">Ask: <b>"Are you ' + c.fullName + '?"</b></div>' +
+                '<button type="button" class="pill" id="swaFillBtn" style="padding:4px 10px;font-size:12px;cursor:pointer;border:0;background:var(--card)">Prefill ' + (c.first || c.fullName) + '\'s info</button>';
+              var btn = document.getElementById('swaFillBtn');
+              if (btn) btn.onclick = function () { fill(c); };
+            } else {
+              box.innerHTML = '<div style="font-weight:600;display:flex;justify-content:space-between"><span>Multiple past names. Ask: "Are you…":</span><span id="swaPriorStatus" style="color:var(--green)"></span></div>' +
+                '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">' +
+                cands.map(function (c, idx) { return '<button type="button" class="pill swa-chip" data-idx="' + idx + '" style="padding:4px 10px;font-size:12px;cursor:pointer;border:0;background:var(--card)"><b>' + c.fullName + '</b> (' + c.count + ')</button>'; }).join('') +
+                '</div>';
+              box.querySelectorAll('.swa-chip').forEach(function (b) {
+                b.onclick = function () { fill(cands[+b.dataset.idx]); };
+              });
+            }
+          } catch (e) {}
+        });
+      }
     }, 50);
     if (!(await pending)) return;
     FIELDS.forEach(function (i) { draft[i] = val(i); });

@@ -215,6 +215,13 @@
   .chk { display: flex !important; align-items: center; justify-content: space-between; gap: 10px; color: var(--text) !important; font-size: 13px !important; }
   .chk input { width: auto; }
   .aconf { background: var(--warn-soft); border-radius: 10px; padding: 10px 12px; font-size: 13px; }
+  .aprior { background: var(--card2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font-size: 12px; display: grid; gap: 6px; }
+  .aprior-title { font-weight: 600; color: var(--text); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .aprior-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+  .aprior-chip { padding: 4px 10px; font-size: 12px; border-radius: 999px; background: var(--fill); border: 1px solid var(--line); color: var(--text); cursor: pointer; font-weight: 500; }
+  .aprior-chip:hover { border-color: var(--accent); color: var(--accent); }
+  .aprior-chip b { color: var(--accent); }
+  .aprior-ok { color: var(--ok); font-size: 12px; font-weight: 600; }
 
   /* ---------- toast ---------- */
   .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: 52px; z-index: 60; width: max-content; max-width: calc(100vw - 20px); background: #1d1d1f; color: #fff;
@@ -314,6 +321,7 @@
     <div class="form">
       <div class="row2"><label>First name<input id="aFirst" autocomplete="off"></label><label>Last name<input id="aLast" autocomplete="off"></label></div>
       <div class="row2"><label>Phone<input id="aPhone" type="tel" inputmode="numeric" autocomplete="off" placeholder="10 digits"></label><label id="aEidRow">UT EID<input id="aEid" autocomplete="off" placeholder="or N/A"></label></div>
+      <div class="aprior" id="aPrior" hidden></div>
       <label id="aEmailRow">Email<input id="aEmail" type="email" autocomplete="off" placeholder="optional"></label>
       <label>Pick-up<input id="aPu" autocomplete="off"></label>
       <label>Drop-off<input id="aDo" autocomplete="off"></label>

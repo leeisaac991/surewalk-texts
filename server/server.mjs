@@ -282,6 +282,61 @@ function status() {
     adds: adds.filter(a => Date.now() - a.at < 2 * ADD_WAIT_MS).map(a => Object.assign({ id: a.id, first: a.first, at: a.at }, addState(a))) };
 }
 
+function lookupRider(body) {
+  let phone = String(body.phone || '').replace(/\D/g, '');
+  if (phone.length === 11 && phone.charAt(0) === '1') phone = phone.slice(1);
+  if (phone.length !== 10) return { ok: true, candidates: [] };
+  const byName = new Map();
+  Object.values(store.rides || {}).forEach(r => {
+    const f = r.f || {};
+    const p10 = String(f.phone || '').replace(/\D/g, '').slice(-10);
+    if (p10 === phone) {
+      const fn = (f.first || '').trim(), ln = (f.last || '').trim();
+      const fullName = `${fn} ${ln}`.trim() || fn || 'Rider';
+      if (!byName.has(fullName)) {
+        byName.set(fullName, {
+          first: fn, last: ln, fullName,
+          eid: (f.eid || '').trim(),
+          email: (f.email || '').trim(),
+          pu: (f.pu || '').trim(),
+          do: (f.do || '').trim(),
+          ada: (f.ada || '').trim(),
+          count: 0,
+          lastTs: f.ts || ''
+        });
+      }
+      const rec = byName.get(fullName);
+      rec.count++;
+      if (!rec.eid && f.eid) rec.eid = (f.eid || '').trim();
+      if (!rec.email && f.email) rec.email = (f.email || '').trim();
+      if (!rec.pu && f.pu) rec.pu = (f.pu || '').trim();
+      if (!rec.do && f.do) rec.do = (f.do || '').trim();
+      if (!rec.ada && f.ada) rec.ada = (f.ada || '').trim();
+      if (f.ts && f.ts > rec.lastTs) rec.lastTs = f.ts;
+    }
+  });
+  try {
+    (gas.logRows() || []).forEach(r => {
+      const p10 = String(r[3] || '').replace(/\D/g, '').slice(-10);
+      if (p10 === phone && r[6]) {
+        const fullName = String(r[6]).trim();
+        if (fullName) {
+          if (!byName.has(fullName)) {
+            const parts = fullName.split(/\s+/);
+            byName.set(fullName, {
+              first: parts[0] || '', last: parts.slice(1).join(' ') || '', fullName,
+              eid: '', email: '', pu: '', do: '', ada: '', count: 0, lastTs: String(r[0] || '')
+            });
+          }
+          byName.get(fullName).count++;
+        }
+      }
+    });
+  } catch (e) {}
+  const candidates = Array.from(byName.values()).sort((a, b) => b.count - a.count);
+  return { ok: true, candidates };
+}
+
 const server = http.createServer(async (req, res) => {
   try {
     if (!okHost(req.headers.host)) return send(res, 403, 'Forbidden', 'text/plain');
@@ -316,6 +371,7 @@ const server = http.createServer(async (req, res) => {
         catch (e) { return send(res, 200, { ok: false, error: String((e && e.message) || e) }); }
       }
       if (p === '/api/status') return send(res, 200, status());
+      if (p === '/api/lookupRider') return send(res, 200, lookupRider(body || {}));
       if (p === '/api/addRide') return send(res, 200, requestAdd(body || {}));
       if (p === '/api/groups') { // check a token and list its chats
         const token = cleanTok(body.token || conf.token || '');

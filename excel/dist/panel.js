@@ -99,7 +99,7 @@
     const ph = String(t[col.phone - 1] == null ? '' : t[col.phone - 1]).replace(/\D/g, ''), fi = String(t[col.first - 1] || '').trim().toLowerCase();
     return 't' + ts.replace(/\D/g, '') + (ph.slice(-4) || fi);
   }
-  const RIDE_FIELDS = ['first', 'last', 'phone', 'pu', 'do', 'ada', 'disp', 'call', 'arr', 'loc', 'van', 'drv', 'nav', 'rsn', 'txs'];
+  const RIDE_FIELDS = ['first', 'last', 'phone', 'pu', 'do', 'ada', 'eid', 'email', 'disp', 'call', 'arr', 'loc', 'van', 'drv', 'nav', 'rsn', 'txs'];
 
   /* ---------------- reading ---------------- */
   // The rides tab. The workbook's first tab is now "Pairings", so it isn't "the first tab" anymore:
@@ -1039,10 +1039,76 @@
     if (!on) return;
     $('addCard').querySelectorAll('input:not([type=checkbox])').forEach(el => { el.value = ''; });
     $('aAda').value = 'No'; $('aCalled').checked = false; $('aMsg').textContent = ''; $('aConfirm').hidden = true; addPending = null;
+    if ($('aPrior')) { $('aPrior').hidden = true; $('aPrior').innerHTML = ''; }
     $('aEidRow').hidden = !!(X && X.col && !X.col.eid);
     $('aEmailRow').hidden = !!(X && X.col && !X.col.email);
     $('aFirst').focus();
   }
+  function fillPriorRider(c) {
+    if (c.first) $('aFirst').value = c.first;
+    if (c.last) $('aLast').value = c.last;
+    if (c.eid && $('aEid')) $('aEid').value = c.eid;
+    if (c.email && $('aEmail')) $('aEmail').value = c.email;
+    if (c.pu && !$('aPu').value.trim()) $('aPu').value = c.pu;
+    if (c.do && !$('aDo').value.trim()) $('aDo').value = c.do;
+    if (c.ada && $('aAda')) $('aAda').value = /yes/i.test(c.ada) ? 'Yes' : 'No';
+    const st = $('aPriorStatus');
+    if (st) st.textContent = `✓ Filled for ${c.fullName}`;
+  }
+  function checkPriorPhone() {
+    const box = $('aPrior');
+    if (!box) return;
+    let phone = $('aPhone').value.replace(/\D/g, '');
+    if (phone.length === 11 && phone.charAt(0) === '1') phone = phone.slice(1);
+    if (phone.length !== 10 || !X || !X.rides) {
+      box.hidden = true; box.innerHTML = ''; return;
+    }
+    const matches = X.rides.filter(r => digits10(r.f.phone) === phone);
+    if (!matches.length) {
+      box.hidden = true; box.innerHTML = ''; return;
+    }
+    const byName = new Map();
+    matches.forEach(r => {
+      const fn = (r.f.first || '').trim(), ln = (r.f.last || '').trim();
+      const fullName = `${fn} ${ln}`.trim() || fn || 'Rider';
+      if (!byName.has(fullName)) {
+        byName.set(fullName, {
+          first: fn, last: ln, fullName,
+          eid: (r.f.eid || '').trim(),
+          email: (r.f.email || '').trim(),
+          pu: (r.f.pu || '').trim(),
+          do: (r.f.do || '').trim(),
+          ada: (r.f.ada || '').trim(),
+          count: 0,
+          lastRow: r.row || 0,
+        });
+      }
+      const rec = byName.get(fullName);
+      rec.count++;
+      if (!rec.eid && r.f.eid) rec.eid = (r.f.eid || '').trim();
+      if (!rec.email && r.f.email) rec.email = (r.f.email || '').trim();
+      if (!rec.pu && r.f.pu) rec.pu = (r.f.pu || '').trim();
+      if (!rec.do && r.f.do) rec.do = (r.f.do || '').trim();
+      if (!rec.ada && r.f.ada) rec.ada = (r.f.ada || '').trim();
+      if (r.row && r.row > rec.lastRow) rec.lastRow = r.row;
+    });
+    const candidates = Array.from(byName.values()).sort((a, b) => (b.count - a.count) || (b.lastRow - a.lastRow));
+    box.hidden = false;
+    if (candidates.length === 1) {
+      const c = candidates[0];
+      box.innerHTML = `<div class="aprior-title"><span>Found prior rider (${c.count} ${c.count === 1 ? 'ride' : 'rides'}):</span><span class="aprior-ok" id="aPriorStatus"></span></div>` +
+        `<div class="aprior-ask">Ask: <b>"Are you ${esc(c.fullName)}?"</b></div>` +
+        `<div class="aprior-chips"><button type="button" class="btn aprior-chip" id="aPriorFill">Prefill ${esc(c.first || c.fullName)}'s info</button></div>`;
+      $('aPriorFill').addEventListener('click', () => fillPriorRider(c));
+    } else {
+      box.innerHTML = `<div class="aprior-title"><span>Multiple past names (${matches.length} rides). Ask: "Are you…":</span><span class="aprior-ok" id="aPriorStatus"></span></div>` +
+        `<div class="aprior-chips">${candidates.map((c, idx) => `<button type="button" class="btn aprior-chip" data-idx="${idx}"><b>${esc(c.fullName)}</b> (${c.count})</button>`).join('')}</div>`;
+      box.querySelectorAll('.aprior-chip').forEach(btn => {
+        btn.addEventListener('click', () => fillPriorRider(candidates[+btn.dataset.idx]));
+      });
+    }
+  }
+  $('aPhone').addEventListener('input', checkPriorPhone);
   $('addBtn').addEventListener('click', () => showAdd(true));
   $('aClose').addEventListener('click', () => showAdd(false));
   $('addCard').addEventListener('click', e => { if (e.target === $('addCard')) showAdd(false); });
