@@ -1153,7 +1153,7 @@
     .replace(/^["']|["'];?$/g, '')
     .trim();
 
-  window.SWT = { tick, refresh, get X() { return X; }, get S() { return S; }, sync, undoStack, choose, openCalling, closeCalling, showConnect, cl, cg, api, get set() { return set; } }; // console / tests
+  window.SWT = { tick, refresh, get X() { return X; }, get S() { return S; }, sync, undoStack, choose, openCalling, closeCalling, showConnect, cl, cg, api, logEv, get set() { return set; } }; // console / tests
   if (REMOTE) {
     document.body.classList.add('remote');
     $('calling').hidden = false;
