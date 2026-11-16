@@ -1,102 +1,304 @@
 <style>
-  :root { --bg: #f5f5f7; --card: #fff; --text: #1d1d1f; --muted: #6e6e73; --line: #e3e3e8; --accent: #bf5700; --accent-soft: #fbeee4;
+  :root { --bg: #f5f5f7; --card: #fff; --text: #1d1d1f; --muted: #6e6e73; --line: #e3e3e8; --acc-l: #bf5700; --acc-d: #ff8a3d; --accent: var(--acc-l);
     --ok: #2e7d32; --ok-soft: #e8f5e9; --bad: #c62828; --bad-soft: #fdecea; --warn: #b26a00; --warn-soft: #fff4e0; --info: #1565c0; --info-soft: #e8f0fd; }
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #1c1c1e; --card: #2c2c2e; --text: #f5f5f7; --muted: #a1a1a6; --line: #3a3a3c;
-    --accent: #ff8a3d; --accent-soft: #3d2a1c; --ok: #66bb6a; --ok-soft: #1f3322; --bad: #ef5350; --bad-soft: #3b1f1f; --warn: #ffb74d; --warn-soft: #3a2e1a; --info: #64b5f6; --info-soft: #1b2a3d; } }
+    --accent: var(--acc-d); --ok: #66bb6a; --ok-soft: #1f3322; --bad: #ef5350; --bad-soft: #3b1f1f; --warn: #ffb74d; --warn-soft: #3a2e1a; --info: #64b5f6; --info-soft: #1b2a3d; } }
+  :root[data-theme="dark"] { --bg: #1c1c1e; --card: #2c2c2e; --text: #f5f5f7; --muted: #a1a1a6; --line: #3a3a3c;
+    --accent: var(--acc-d); --ok: #66bb6a; --ok-soft: #1f3322; --bad: #ef5350; --bad-soft: #3b1f1f; --warn: #ffb74d; --warn-soft: #3a2e1a; --info: #64b5f6; --info-soft: #1b2a3d; }
+  :root { --accent-soft: color-mix(in srgb, var(--accent) 14%, var(--card)); }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 "Segoe UI", system-ui, sans-serif; }
-  button, input, select { font: inherit; color: inherit; }
-  .bar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 12px; background: var(--accent); color: #fff; font-weight: 600; }
-  .bar .sp { flex: 1; }
-  .bar > span:first-child { white-space: nowrap; flex: none; }
-  .bar .sync { flex: 0 1 auto; min-width: 0; }
-  .bar button { flex: none; white-space: nowrap; border: 0; background: rgba(255,255,255,.18); color: #fff; border-radius: 99px; padding: 3px 10px; cursor: pointer; font-size: 12px; font-weight: 600; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: #bbb; display: inline-block; }
-  .sync { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; opacity: .95; max-width: 55vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  main { padding: 10px; display: grid; gap: 10px; }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
-  .muted { color: var(--muted); } .small { font-size: 12px; }
-  h2 { font-size: 15px; margin: 0; }
-  .who { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
-  .route { margin: 6px 0 8px; font-size: 14px; }
-  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
-  .chip { font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 99px; background: var(--bg); color: var(--muted); border: 1px solid var(--line); }
-  .chip.ok { background: var(--ok-soft); color: var(--ok); border-color: transparent; }
-  .chip.bad { background: var(--bad-soft); color: var(--bad); border-color: transparent; }
-  .chip.warn { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
-  .chip.info { background: var(--info-soft); color: var(--info); border-color: transparent; }
-  .chip.dark { background: #1d1d1f; color: #fff; border-color: transparent; }
-  .acts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-  .btn { border: 1px solid var(--line); background: var(--card); border-radius: 10px; padding: 8px 10px; cursor: pointer; font-weight: 600; text-align: left; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 "Segoe UI", system-ui, sans-serif; overflow-x: hidden; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  a { color: var(--accent); }
+  [hidden] { display: none !important; }
+  .muted { color: var(--muted); } .small { font-size: 12px; } .err { color: var(--bad); }
+  .tab { font-variant-numeric: tabular-nums; }
+  .sp { flex: 1; }
+  .ib { border: 0; background: transparent; width: 32px; height: 32px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; font-size: 16px; color: var(--muted); }
+  .ib:hover { background: var(--bg); color: var(--text); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); display: inline-block; flex: none; }
+  .chip { font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 99px; white-space: nowrap; flex: none; }
+  .chip.new { background: var(--warn-soft); color: var(--warn); }
+  .chip.called { background: var(--info-soft); color: var(--info); }
+  .chip.cancelled { background: var(--line); color: var(--muted); }
+  .chip.dup { background: var(--bad-soft); color: var(--bad); }
+  .chip.picked { background: var(--ok-soft); color: var(--ok); }
+  .pill-ada { font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 99px; background: var(--bad); color: #fff; }
+  .gbadge { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 99px; color: #fff; flex: none; }
+  .btn { border: 1px solid var(--line); background: var(--card); border-radius: 10px; padding: 8px 14px; font-weight: 600; }
   .btn:hover:not(:disabled) { border-color: var(--accent); }
   .btn:disabled { opacity: .45; cursor: default; }
-  .btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-  .btn.danger { color: var(--bad); }
-  .btn.wide { grid-column: 1 / -1; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
   .btn.busy { opacity: .6; pointer-events: none; }
-  .form { display: grid; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
+  .link { border: 0; background: none; padding: 0; color: var(--accent); font-weight: 600; }
+  .sw { position: relative; width: 42px; height: 25px; border-radius: 99px; background: var(--line); border: 0; flex: none; padding: 0; transition: background .2s; }
+  .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 21px; height: 21px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: transform .2s; }
+  .sw[aria-checked="true"] { background: var(--ok); } .sw[aria-checked="true"]::after { transform: translateX(17px); }
+  input.fld, select.fld, textarea.fld { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+  input.fld:focus, select.fld:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+  /* ---------- sidebar (3a): launcher ---------- */
+  .sb { display: flex; flex-direction: column; min-height: 100vh; }
+  .sbh { display: flex; align-items: center; gap: 8px; height: 46px; padding: 0 8px 0 14px; background: var(--card); border-bottom: 1px solid var(--line); flex: none; }
+  .brand { font-weight: 800; color: var(--accent); white-space: nowrap; }
+  .syncl { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .launch { flex: 1; margin: 16px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 24px 18px 18px;
+    border: 1px solid var(--line); border-radius: 16px; background: var(--card); text-align: center; color: var(--text); min-height: 280px; transition: border-color .15s; }
+  .launch:hover { border-color: var(--accent); }
+  .launch:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .lc-n { font-size: 64px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+  .lc-sub { font-size: 16px; color: var(--muted); }
+  .lc-next { font-size: 13px; margin-top: 10px; min-height: 18px; }
+  .lc-btn { margin-top: auto; width: 100%; padding: 13px; border-radius: 12px; background: var(--accent); color: #fff; font-size: 17px; font-weight: 700; }
+  .lc-err { color: var(--bad); font-size: 13px; }
+  .abar { display: flex; align-items: center; gap: 8px; width: 100%; height: 40px; padding: 0 14px; border: 0; border-top: 1px solid var(--line); background: var(--card); text-align: left; flex: none; }
+  .abar:hover { background: var(--bg); }
+
+  /* ---------- sidebar (3c): Auto-text ---------- */
+  .av { display: flex; flex-direction: column; min-height: 100vh; }
+  .avh { display: flex; align-items: center; gap: 6px; height: 46px; padding: 0 12px 0 6px; background: var(--card); border-bottom: 1px solid var(--line); flex: none; }
+  .avh b { font-size: 15px; }
+  .avs { display: flex; align-items: center; gap: 8px; padding: 14px 16px 6px; font-size: 14px; }
+  .avg { padding: 0 16px 10px; font-size: 12.5px; color: var(--muted); display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .avl { padding: 4px 16px 6px; font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .logc { margin: 0 12px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: auto; flex: 1; min-height: 120px; max-height: calc(100vh - 230px); }
+  .lg { display: grid; grid-template-columns: 16px 1fr auto; gap: 8px; padding: 9px 12px; border-bottom: 1px solid var(--line); align-items: start; }
+  .lg:last-child { border-bottom: 0; }
+  .lg .gl { font-weight: 800; text-align: center; } .lg .gl.up { color: var(--accent); } .lg .gl.down { color: var(--info); } .lg .gl.bad { color: var(--bad); }
+  .lg b { font-size: 13px; display: block; } .lg span.d { font-size: 12px; color: var(--muted); } .lg .t { font-size: 12px; color: var(--muted); }
+  .lg.bad b { color: var(--bad); }
+  .avf { padding: 12px 16px 16px; font-size: 12px; color: var(--muted); }
+
+  /* ---------- Connect GroupMe (2a), over the Auto-text view ---------- */
+  .cg { position: fixed; inset: 0; z-index: 20; background: var(--bg); display: flex; flex-direction: column; overflow: auto; }
+  .cgb { padding: 18px 16px 24px; }
+  .cgb h2 { font-size: 20px; margin: 0 0 3px; }
+  .cg-sub { color: var(--muted); margin: 0 0 18px; font-size: 13.5px; }
+  .cg-steps { list-style: none; margin: 0 0 14px; padding: 0; display: grid; gap: 14px; }
+  .cg-steps li { display: flex; gap: 10px; align-items: flex-start; }
+  .cg-n { width: 26px; height: 26px; border-radius: 50%; flex: none; background: var(--accent-soft); color: var(--accent); font-weight: 800; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; }
+  .cg-st { flex: 1; min-width: 0; display: grid; gap: 8px; padding-top: 3px; }
+  .cg-open { display: block; text-align: center; padding: 10px; border-radius: 10px; background: var(--accent); color: #fff; font-weight: 700; text-decoration: none; }
+  .cg-bm { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border: 2px dashed var(--accent); border-radius: 10px; color: var(--accent); font-weight: 700; text-decoration: none; cursor: grab; background: var(--card); }
+  .cg-help { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 4px; font-size: 13px; }
+  .cg-help summary { cursor: pointer; color: var(--accent); font-weight: 600; }
+  .cg-help p { margin: 8px 0; color: var(--muted); }
+  .cg-err { color: var(--bad); font-size: 13px; margin-top: 8px; }
+  .cg-wait { color: var(--accent); font-size: 13px; font-weight: 600; }
+  .grp { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); font-weight: 700; margin-bottom: 6px; }
+  .grp:hover { border-color: var(--accent); }
+  .sugg { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); margin-left: auto; }
+
+  /* ---------- Settings (modal) ---------- */
+  .mbg { position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,.42); display: flex; align-items: center; justify-content: center; padding: 12px; }
+  .modal { width: min(640px, 100%); height: min(440px, calc(100vh - 24px)); background: var(--card); border-radius: 14px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 18px 50px rgba(0,0,0,.3); }
+  .mh { display: flex; align-items: center; gap: 8px; height: 46px; padding: 0 8px 0 16px; border-bottom: 1px solid var(--line); flex: none; }
+  .mh b { font-size: 15px; }
+  .mm { flex: 1; min-height: 0; display: flex; }
+  .mnav { width: 170px; flex: none; background: var(--bg); padding: 10px 8px; display: flex; flex-direction: column; gap: 2px; }
+  .mnav button { border: 0; background: none; text-align: left; padding: 9px 10px; border-radius: 8px; font-weight: 600; }
+  .mnav button.on { background: var(--card); color: var(--accent); }
+  .mbody { flex: 1; min-width: 0; overflow: auto; padding: 16px 18px; display: grid; gap: 14px; align-content: start; }
+  .mbody label.l { display: grid; gap: 5px; font-size: 12.5px; font-weight: 600; color: var(--muted); }
+  .mrow { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; }
+  .seg { display: inline-flex; background: var(--bg); border: 1px solid var(--line); border-radius: 9px; padding: 2px; }
+  .seg button { border: 0; background: none; padding: 5px 14px; border-radius: 7px; font-weight: 600; font-size: 13px; color: var(--muted); }
+  .seg button.on { background: var(--card); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+  .accs { display: flex; gap: 10px; flex-wrap: wrap; }
+  .acc { width: 30px; height: 30px; border-radius: 50%; border: 0; }
+  .acc.on { box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--text); }
+  .mascs { display: flex; gap: 8px; flex-wrap: wrap; }
+  .masc { width: 92px; padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); display: grid; justify-items: center; gap: 4px; font-size: 12px; font-weight: 600; }
+  .masc.on { border-color: var(--accent); color: var(--accent); }
+  .masc svg { width: 46px; height: 46px; }
+  @media (max-width: 520px) { .mm { flex-direction: column; } .mnav { width: auto; flex-direction: row; overflow-x: auto; } .mnav button { white-space: nowrap; } .modal { height: calc(100vh - 24px); } }
+
+  /* ---------- Calling (3b): its own window, or over the side panel in Script Lab ---------- */
+  .call { position: fixed; inset: 0; z-index: 30; background: var(--bg); display: flex; flex-direction: column; }
+  body.remote .sb, body.remote .av { display: none !important; }
+  .ct { display: flex; align-items: center; gap: 10px; height: 54px; padding: 0 12px 0 16px; background: var(--card); border-bottom: 1px solid var(--line); flex: none; }
+  .ct h1 { font-size: 17px; margin: 0; white-space: nowrap; }
+  .ct .q { width: 250px; max-width: 34vw; }
+  .ct .btn { white-space: nowrap; flex: none; }
+  .cbody { flex: 1; min-height: 0; display: grid; grid-template-columns: 350px minmax(0, 1fr); }
+  .clist { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; background: var(--card); }
+  .cpills { display: flex; gap: 6px; padding: 10px 12px; flex-wrap: wrap; }
+  .cpills button { border: 1px solid var(--line); background: var(--bg); border-radius: 99px; padding: 5px 12px; font-weight: 600; font-size: 13px; }
+  .cpills button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .crows { flex: 1; overflow: auto; }
+  .crow { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 8px; align-items: center; width: 100%; text-align: left; padding: 9px 12px; border: 0; border-bottom: 1px solid var(--line); background: none; }
+  .crow:hover { background: var(--bg); }
+  .crow.sel { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+  .crow .t { font-size: 12px; color: var(--muted); }
+  .crow .n { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; gap: 6px; align-items: center; }
+  .crow .n span.nm { overflow: hidden; text-overflow: ellipsis; }
+  .crow .r { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cempty { padding: 28px 12px; text-align: center; color: var(--muted); }
+  .chint { padding: 8px 12px; font-size: 11.5px; color: var(--muted); border-top: 1px solid var(--line); }
+  .cdet { overflow: auto; padding: 20px 24px 28px; min-width: 0; }
+  .cdet h2 { font-size: 26px; margin: 0; }
+  .chead { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .csub { color: var(--muted); font-size: 13px; margin: 4px 0 16px; }
+  .cback { display: none; margin-bottom: 10px; }
+  .phone { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 14px 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--card); margin-bottom: 18px; }
+  .phone a.tel { font-size: 30px; font-weight: 700; text-decoration: none; color: var(--text); font-variant-numeric: tabular-nums; margin-right: auto; }
+  .lbl { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin: 0 0 8px; }
+  .rte { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 10px; align-items: stretch; }
+  .rcard { display: grid; gap: 2px; text-align: left; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); cursor: text; min-width: 0; }
+  .rcard:hover, .rcard.ed { border-color: var(--accent); }
+  .rcard small { font-size: 12px; color: var(--muted); }
+  .rcard .v, .rcard input { font-size: 17px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rcard input { border: 0; background: transparent; padding: 0; width: 100%; outline: none; color: var(--text); }
+  .rarrow { align-self: center; color: var(--muted); font-size: 18px; }
+  .ract { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+  .cnote { color: var(--muted); font-size: 13px; margin-top: 10px; }
+  .gsec { margin-top: 18px; }
+  .gbtn { width: 100%; padding: 11px; border: 1.5px dashed var(--line); border-radius: 12px; background: none; font-weight: 600; color: var(--muted); text-align: center; }
+  .gbtn:hover { border-color: var(--accent); color: var(--accent); }
+  .gcard { border: 2px solid; border-radius: 12px; padding: 12px; margin-bottom: 8px; background: var(--card); }
+  .gcard b { display: block; margin-bottom: 8px; }
+  .gmem { display: inline-flex; align-items: center; gap: 4px; padding: 3px 4px 3px 10px; border-radius: 99px; background: var(--bg); border: 1px solid var(--line); margin: 0 6px 6px 0; font-size: 13px; font-weight: 600; }
+  .gmem button { border: 0; background: none; width: 22px; height: 22px; border-radius: 50%; color: var(--muted); }
+  .gmem button:hover { background: var(--line); color: var(--text); }
+  .gpick { border: 1.5px solid var(--accent); border-radius: 12px; padding: 12px; background: var(--card); margin-top: 8px; }
+  .gpick .gl { max-height: 180px; overflow: auto; margin: 8px 0; display: grid; gap: 4px; }
+  .gopt { display: grid; grid-template-columns: 20px 1fr; gap: 8px; align-items: center; padding: 7px 8px; border-radius: 8px; cursor: pointer; }
+  .gopt:hover { background: var(--bg); }
+  .gopt .sq { width: 18px; height: 18px; border: 2px solid var(--line); border-radius: 5px; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; color: #fff; }
+  .gopt.on .sq { background: var(--accent); border-color: var(--accent); }
+  .gopt small { color: var(--muted); display: block; font-size: 12px; }
+  .samepu { font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: 99px; background: var(--ok-soft); color: var(--ok); margin-left: 4px; }
+  .cacts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
+  .cacts .btn.red { color: var(--bad); }
+  .conf { margin-top: 12px; padding: 14px; border-radius: 12px; }
+  .conf.cx { background: var(--bad-soft); } .conf.dx { background: var(--warn-soft); }
+  .conf p { margin: 0 0 10px; font-weight: 600; }
+  .rpills { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+  .rpills button { border: 1px solid var(--line); background: var(--card); border-radius: 99px; padding: 5px 12px; font-weight: 600; font-size: 13px; }
+  .rpills button.on { background: var(--bad); border-color: var(--bad); color: #fff; }
+  .btn.badf { background: var(--bad); border-color: var(--bad); color: #fff; }
+  .btn.warnf { background: var(--warn); border-color: var(--warn); color: #fff; }
+  .nobody { display: grid; justify-items: center; gap: 8px; padding: 60px 20px; text-align: center; }
+  .nobody svg { width: 150px; height: 150px; }
+  .nobody h3 { font-size: 20px; margin: 0; }
+  @media (max-width: 760px) { /* narrow (the side panel in Script Lab): the list, or one ride */
+    .cbody { grid-template-columns: 1fr; } .call.has-sel .clist { display: none; } .call:not(.has-sel) .cdet { display: none; }
+    .cback { display: inline-block; } .ct { gap: 6px; padding: 0 6px 0 12px; } .ct .q { width: 110px; } .ct .hide-n { display: none; } .ct .btn { padding: 7px 10px; }
+    .rte { grid-template-columns: 1fr; } .rarrow { display: none; }
+  }
+
+  /* ---------- ＋ Ride (dialog) ---------- */
+  .addm { width: min(520px, 100%); max-height: calc(100vh - 24px); background: var(--card); border-radius: 14px; overflow: auto; padding: 18px; box-shadow: 0 18px 50px rgba(0,0,0,.3); }
+  .addm h2 { font-size: 18px; margin: 0 0 4px; }
+  .form { display: grid; gap: 9px; margin-top: 10px; }
   .form label { display: grid; gap: 4px; font-size: 12px; font-weight: 600; color: var(--muted); }
-  .form input, .form select, .set input, .set select { width: 100%; padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
-  .row2 { display: flex; gap: 6px; } .row2 > * { flex: 1; }
-  .empty { text-align: center; padding: 18px 8px; }
-  .tools { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; }
-  .tools input { flex: 1; padding: 6px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); min-width: 0; }
-  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 99px; overflow: hidden; flex: none; }
-  .seg button { border: 0; background: transparent; padding: 4px 10px; cursor: pointer; font-size: 12px; font-weight: 600; color: var(--muted); }
-  .seg button.on { background: var(--accent); color: #fff; }
-  .list { display: grid; gap: 2px; max-height: 46vh; overflow: auto; }
-  .ride { display: grid; grid-template-columns: 52px 1fr auto; gap: 8px; align-items: center; padding: 6px 6px; border-radius: 8px; cursor: pointer; border: 1px solid transparent; }
-  .ride:hover { background: var(--bg); }
-  .ride.sel { border-color: var(--accent); background: var(--accent-soft); }
-  .ride .t { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12px; }
-  .ride .n { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .ride .r { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .ride.done .n { color: var(--muted); font-weight: 500; }
-  .feed { display: grid; gap: 4px; font-size: 12px; max-height: 160px; overflow: auto; }
-  .feed div { display: flex; gap: 6px; } .feed .tm { color: var(--muted); flex: none; font-variant-numeric: tabular-nums; }
-  .feed .bad { color: var(--bad); }
-  .set { display: grid; gap: 10px; }
-  .set label { display: grid; gap: 4px; font-size: 12px; font-weight: 600; color: var(--muted); }
-  .sw { display: flex !important; grid-template-columns: none; align-items: center; justify-content: space-between; gap: 10px; color: var(--text) !important; font-size: 13px !important; }
-  .sw input { width: auto; }
-  .toast { position: fixed; left: 10px; right: 10px; bottom: 10px; background: #1d1d1f; color: #fff; padding: 9px 12px; border-radius: 10px; font-size: 13px; z-index: 9; display: flex; gap: 10px; align-items: center; }
-  .toast button { border: 0; background: transparent; color: #ffb27a; font-weight: 700; cursor: pointer; }
-  .err { color: var(--bad); }
-  [hidden] { display: none !important; }
+  .form input, .form select { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+  .row2 { display: flex; gap: 8px; } .row2 > * { flex: 1; min-width: 0; }
+  .chk { display: flex !important; align-items: center; justify-content: space-between; gap: 10px; color: var(--text) !important; font-size: 13px !important; }
+  .chk input { width: auto; }
+  .aconf { background: var(--warn-soft); border-radius: 10px; padding: 10px 12px; font-size: 13px; }
+
+  /* ---------- toast ---------- */
+  .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: 52px; z-index: 60; width: max-content; max-width: calc(100vw - 20px); background: #1d1d1f; color: #fff;
+    padding: 10px 14px; border-radius: 10px; font-size: 13px; display: flex; gap: 14px; align-items: center; box-shadow: 0 8px 24px rgba(0,0,0,.3); }
+  body.calling-open .toast, body.remote .toast { bottom: 16px; }
+  .toast button { border: 0; background: transparent; color: #ffb27a; font-weight: 700; }
 </style>
 
-<div class="bar">
-  <span>SURE Walk Texts</span><span class="sp"></span>
-  <span class="sync" id="syncLbl" title="GroupMe sync"><span class="dot" id="syncDot"></span><span id="syncTxt">Sync off</span></span>
-  <button id="addBtn" title="Add a ride by hand (not through the form)">＋ Ride</button>
-  <button id="restartBtn" title="Restart the panel (reloads it with the newest version)" aria-label="Restart the panel">↻</button>
-  <button id="setBtn" title="Settings">⚙</button>
+<!-- ======================= the side panel (3a launcher) ======================= -->
+<div class="sb" id="home">
+  <div class="sbh">
+    <span class="brand">SURE Walk</span>
+    <span class="syncl" id="syncLbl" title="GroupMe sync"><span class="dot" id="syncDot"></span><span id="syncTxt">Sync off</span></span>
+    <span class="sp"></span>
+    <button class="ib" id="restartBtn" title="Restart the panel (reloads it with the newest version)" aria-label="Restart the panel">↻</button>
+    <button class="ib" id="setBtn" title="Settings" aria-label="Settings">⚙</button>
+  </div>
+  <button class="launch" id="openCalling" type="button" aria-label="Open Calling">
+    <span class="lc-n" id="lcN">–</span>
+    <span class="lc-sub">to call</span>
+    <span class="lc-next" id="lcNext"></span>
+    <span class="lc-err" id="lcErr" hidden></span>
+    <span class="lc-btn">Open Calling ↗</span>
+  </button>
+  <button class="abar" id="autoBar" type="button"><span class="dot" id="abDot"></span><span>Auto-text <b id="abState">off</b></span><span class="sp"></span><span class="muted">›</span></button>
 </div>
 
-<main>
-  <section class="card" id="setCard" hidden>
-    <div class="set">
-      <h2>Settings</h2>
-      <label>Your name (goes in Dispatcher when you mark a ride called)<input id="setName" placeholder="F. Lastname"></label>
-      <label class="sw">Put my name in Dispatcher when I mark called<input type="checkbox" id="setDispName"></label>
-      <label>Rides tab (blank = this month's tab)<input id="setTab" placeholder="November"></label>
-      <h2 style="margin-top:6px">GroupMe sync</h2>
-      <div class="small muted">Posts new rides and changes to one GroupMe chat. The texting computer reads that chat, texts riders, and sends back Call Times, cancels, duplicates and pick-up / drop-off fixes, which this panel writes into the sheet. Turn it on in <b>one</b> dispatcher's panel.</div>
-      <label>GroupMe token<input id="setTok" type="password" autocomplete="off" placeholder="X-Access-Token from web.groupme.com"></label>
-      <div class="row2"><button class="btn" id="setLoad">Check &amp; load chats</button></div>
-      <label>Sync chat<select id="setGrp"><option value="">— load chats first —</option></select></label>
-      <label class="sw">Sync rides with the texting computer<input type="checkbox" id="setSync"></label>
-      <div class="small" id="setMsg" role="status"></div>
-      <h2 style="margin-top:8px">Test texting &amp; polls</h2>
-      <div class="small muted">Open the texting dashboard at <a href="http://127.0.0.1:8787" target="_blank" style="color:var(--accent);font-weight:600">http://127.0.0.1:8787</a> on the texting PC to edit templates, send test texts, and trigger test polls to your phone.</div>
-      <div class="row2"><button class="btn primary" id="setSave">Save</button><button class="btn" id="setClose">Close</button></div>
-    </div>
-  </section>
+<!-- ======================= the side panel (3c Auto-text) ======================= -->
+<div class="av" id="auto" hidden>
+  <div class="avh">
+    <button class="ib" id="autoBack" aria-label="Back">‹</button>
+    <b>Auto-text</b><span class="sp"></span>
+    <button class="sw" id="setSync" role="switch" aria-checked="false" aria-label="Auto-text new riders"></button>
+  </div>
+  <div class="avs"><span class="dot" id="avDot"></span><b id="avState">Off</b><span class="muted small" id="avSeen">Not sending</span></div>
+  <div class="avg" id="avGm"></div>
+  <div class="avl">Log</div>
+  <div class="logc" id="feed"><div class="lg"><span></span><span class="muted small">Nothing yet.</span><span></span></div></div>
+  <div class="avf">Test texts and polls: open the texting dashboard at <a href="http://127.0.0.1:8787" target="_blank" rel="noopener">http://127.0.0.1:8787</a> on the texting PC.</div>
+</div>
 
-  <section class="card" id="addCard" hidden>
-    <div class="set">
-      <h2>Add a ride by hand</h2>
-      <div class="small muted">For a rider who called in or couldn't use the form. Adds a row under the last ride, like a form response (the Id stays blank).</div>
+<!-- ======================= Connect GroupMe (2a) ======================= -->
+<div class="cg" id="connect" role="dialog" aria-modal="true" aria-label="Connect GroupMe" hidden>
+  <div class="avh"><button class="ib" id="cgBack" aria-label="Back">‹</button><b>Auto-text</b></div>
+  <div class="cgb" id="cgBody"></div>
+</div>
+
+<!-- ======================= Settings ======================= -->
+<div class="mbg" id="setModal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-label="Settings">
+    <div class="mh"><b>Settings</b><span class="sp"></span><button class="ib" id="setClose" aria-label="Close settings">✕</button></div>
+    <div class="mm">
+      <nav class="mnav" aria-label="Settings sections">
+        <button data-sc="you" class="on">You</button><button data-sc="look">Appearance</button><button data-sc="sheet">Sheet</button>
+      </nav>
+      <div class="mbody">
+        <section data-sc="you">
+          <label class="l">Your name<input class="fld" id="setName" placeholder="F. Lastname" autocomplete="off"></label>
+          <div class="mrow" style="margin-top:14px"><span>Put my name in Dispatcher when I mark called</span><button class="sw" id="setDispName" role="switch" aria-checked="true" aria-label="Put my name in Dispatcher when I mark called"></button></div>
+        </section>
+        <section data-sc="look" hidden>
+          <div class="mrow"><span>Theme</span><div class="seg" id="themeSeg"><button data-th="auto">Auto</button><button data-th="light">Light</button><button data-th="dark">Dark</button></div></div>
+          <div style="margin-top:16px"><div class="lbl" style="text-transform:none;letter-spacing:0;font-size:12.5px">Accent</div><div class="accs" id="accRow"></div></div>
+          <div style="margin-top:16px"><div class="lbl" style="text-transform:none;letter-spacing:0;font-size:12.5px">Mascot</div><div class="mascs" id="mascRow"></div>
+            <div class="small muted" style="margin-top:6px">Shows when no one is left to call.</div></div>
+        </section>
+        <section data-sc="sheet" hidden>
+          <label class="l">Rides tab<input class="fld" id="setTab" placeholder="November" autocomplete="off"></label>
+          <div class="small muted">Blank = this month's tab.</div>
+        </section>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======================= Calling (3b) ======================= -->
+<div class="call" id="calling" hidden>
+  <div class="ct">
+    <h1>Calling</h1><span class="muted hide-n" id="cCount"></span><span class="sp"></span>
+    <input class="fld q" id="q" type="search" placeholder="Search name, phone, place" aria-label="Search name, phone, place">
+    <button class="btn" id="addBtn" title="Add a ride by hand (not through the form)">＋ Ride</button>
+    <button class="ib" id="cSet" aria-label="Settings" title="Settings">⚙</button>
+    <button class="ib" id="cClose" aria-label="Close Calling" title="Close">✕</button>
+  </div>
+  <div class="cbody">
+    <div class="clist">
+      <div class="cpills" id="cPills" role="tablist"></div>
+      <div class="crows" id="list"></div>
+      <div class="chint">↑ ↓ move · C mark called · E edit route</div>
+    </div>
+    <div class="cdet" id="selRide"></div>
+  </div>
+</div>
+
+<!-- ======================= ＋ Ride (dialog) ======================= -->
+<div class="mbg" id="addCard" hidden>
+  <div class="addm" role="dialog" aria-modal="true" aria-label="Add a ride by hand">
+    <h2>Add a ride by hand</h2>
+    <div class="small muted">For a rider who called in or couldn't use the form. Adds a row under the last ride, like a form response (the Id stays blank).</div>
+    <div class="form">
       <div class="row2"><label>First name<input id="aFirst" autocomplete="off"></label><label>Last name<input id="aLast" autocomplete="off"></label></div>
       <div class="row2"><label>Phone<input id="aPhone" type="tel" inputmode="numeric" autocomplete="off" placeholder="10 digits"></label><label id="aEidRow">UT EID<input id="aEid" autocomplete="off" placeholder="or N/A"></label></div>
       <label id="aEmailRow">Email<input id="aEmail" type="email" autocomplete="off" placeholder="optional"></label>
@@ -104,29 +306,12 @@
       <label>Drop-off<input id="aDo" autocomplete="off"></label>
       <label>ADA assistance<select id="aAda"><option>No</option><option>Yes</option></select></label>
       <label>Notes (optional)<input id="aNotes" autocomplete="off"></label>
-      <label class="sw">Already talked to them — mark called now (no confirmation text)<input type="checkbox" id="aCalled"></label>
+      <label class="chk">Already talked to them — mark called now (no confirmation text)<input type="checkbox" id="aCalled"></label>
+      <div class="aconf" id="aConfirm" hidden></div>
       <div class="small err" id="aMsg" role="status"></div>
       <div class="row2"><button class="btn primary" id="aSave">Add ride</button><button class="btn" id="aClose">Close</button></div>
     </div>
-  </section>
+  </div>
+</div>
 
-  <section class="card" id="selCard">
-    <div class="empty muted" id="selEmpty">Click a ride's row in the sheet (or pick one below).</div>
-    <div id="selRide" hidden></div>
-  </section>
-
-  <section class="card">
-    <div class="tools">
-      <input id="q" type="search" placeholder="Search name, phone, place">
-      <div class="seg" role="tablist"><button data-f="open" class="on">Open</button><button data-f="all">All</button></div>
-    </div>
-    <div class="list" id="list"></div>
-    <div class="small muted" id="listNote" style="margin-top:6px"></div>
-  </section>
-
-  <section class="card">
-    <h2 style="margin-bottom:6px">Activity</h2>
-    <div class="feed" id="feed"><div class="muted">Nothing yet.</div></div>
-  </section>
-</main>
-<div class="toast" id="toast" hidden><span id="toastTxt"></span><span style="flex:1"></span><button id="toastUndo" hidden>Undo</button></div>
+<div class="toast" id="toast" role="status" hidden><span id="toastTxt"></span><button id="toastUndo" hidden>Undo</button></div>

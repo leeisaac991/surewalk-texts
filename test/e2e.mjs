@@ -25,7 +25,7 @@ const gm = http.createServer(async (req, res) => {
   const u = new URL(req.url, 'http://x'), cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': 'GET,POST' };
   const send = (code, body, type = 'application/json') => { res.writeHead(code, Object.assign({ 'Content-Type': type }, cors)); res.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body)); };
   if (req.method === 'OPTIONS') return send(204, '');
-  if (u.pathname === '/panel') return send(200, panelPage(u.searchParams.get('click')), 'text/html');
+  if (u.pathname === '/panel') return send(200, u.searchParams.get('remote') ? callingPage() : panelPage(u.searchParams.get('click')), 'text/html');
   if (u.pathname.startsWith('/files/')) return send(200, fs.readFileSync(path.join(ROOT, u.pathname.slice(7))), 'text/javascript');
   if (u.pathname === '/v3/groups') return send(200, { response: [{ id: 'g1', name: 'SURE Walk Texts sync' }] });
   const m = /^\/v3\/groups\/g1\/messages$/.exec(u.pathname);
@@ -73,6 +73,17 @@ const SHEET = { rows: [HEADER,
   ride(2, 2, 'Ben', 'Ortiz', '5125550102', 'Kins', 'Duren'),
   ride(3, 10, 'Cara', 'Wu', '5125550103', 'Gregory Gym', 'Dobie', { rsn: 'Not Ready' }),
 ], paint: [[4, '#000000', '#FFFFFF']], table: !!process.env.TABLE }; // TABLE=1: the rides are an Excel table
+// The Calling window (the add-in opens it with Excel's dialog API): the same files in "remote" mode, with a stand-in
+// for Office's dialog messaging; the side panel's stand-in (installed by the test) loads this page in a frame.
+function callingPage() {
+  const html = fs.readFileSync(path.join(ROOT, 'excel/panel.html'), 'utf8');
+  return `<!doctype html><html><head><meta charset="utf-8"></head><body>${html}
+<script>window.FAKE_SHEET = { rows: [] }; window.__SWT_REMOTE = true; window.SWT_TEST = { tick: 1000 };</script>
+<script src="/files/test/fake-excel.js"></script>
+<script>Office.EventType = { DialogParentMessageReceived: 'p' };
+Office.context = { ui: { addHandlerAsync(t, h, cb) { window.__fromParent = m => h({ message: m }); if (cb) cb({ status: 'succeeded' }); }, messageParent(m) { parent.__dlgMsg(m); } } };</script>
+<script src="/files/protocol.js"></script><script src="/files/excel/panel.js"></script></body></html>`;
+}
 function panelPage(click) {
   const html = fs.readFileSync(path.join(ROOT, 'excel/panel.html'), 'utf8');
   const clock = `(() => { const R = Date, T0 = ${NOW}, R0 = R.now(); window.Date = class extends R { constructor(...a) { super(...(a.length ? a : [T0 + R.now() - R0])); } static now() { return T0 + R.now() - R0; } }; })();`;
@@ -82,7 +93,7 @@ window.FAKE_SHEET = ${JSON.stringify(SHEET)};
 window.SWT_TEST = { tick: 1000, gap: 300, gm: 'http://127.0.0.1:${GPORT}/v3' };
 localStorage.setItem('swt.settings', JSON.stringify({ name: 'T. Tester', dispName: true, token: 'tok_${'a'.repeat(30)}', groupId: 'g1', groupName: 'SURE Walk Texts sync', sync: true }));
 window.confirm = () => true;
-${click ? `setTimeout(() => { __xl.click(${+click}); setTimeout(() => document.querySelector('#selRide [data-a=cancel]').click(), 400); }, 1500);` : ''}
+${click ? `setTimeout(() => { SWT.openCalling(); __xl.click(${+click}); setTimeout(() => document.querySelector('#selRide [data-a=cancel]').click(), 400); }, 1500);` : ''}
 </script>
 <script src="/files/test/fake-excel.js"></script><script src="/files/protocol.js"></script><script src="/files/excel/panel.js"></script></body></html>`;
 }
@@ -92,6 +103,7 @@ async function browser() {
   const prof = path.join(TMP, 'chrome');
   const bin = ['chromium-browser', 'chromium', 'google-chrome'].map(b => '/usr/bin/' + b).find(b => fs.existsSync(b));
   const ch = spawn(bin, ['--headless=new', '--no-sandbox', '--password-store=basic', `--user-data-dir=${prof}`, `--remote-debugging-port=${CPORT}`, '--no-first-run', `http://127.0.0.1:${GPORT}/panel`], { stdio: 'ignore' });
+  process.on('exit', () => { try { ch.kill('SIGKILL'); } catch (e) { /* gone */ } }); // never leave a browser behind (it would hold the debugging port)
   let ws;
   for (let i = 0; i < 50 && !ws; i++) {
     await sleep(200);
@@ -115,6 +127,7 @@ function server() {
     env: Object.assign({}, process.env, { PORT: SPORT, SUREWALK_STATE: path.join(TMP, 'state'), XDG_CONFIG_HOME: path.join(TMP, 'cfg'), GROUPME_API: `http://127.0.0.1:${GPORT}/v3`, SW_POLL_MS: 700, SW_POST_GAP_MS: 200, SW_SEND_GAP_MS: 0 }),
     stdio: ['ignore', 'pipe', 'pipe'] });
   let out = ''; p.stdout.on('data', d => { out += d; }); p.stderr.on('data', d => { out += d; });
+  process.on('exit', () => { try { p.kill('SIGKILL'); } catch (e) { /* gone */ } });
   return { p, out: () => out };
 }
 
@@ -159,32 +172,39 @@ if (C.txs) ok(await B.js(`__xl.text(3,'${C.txs}') === ''`), '"Confirmed" column 
 ok(/cancel/i.test(JSON.stringify(res.outbox || [])) || (res.outbox || []).length > 0, 'rider gets the cancelled text');
 
 console.log('panel actions -> texting server');
+await B.js(`SWT.openCalling(), 1`); // the Calling view (over the side panel here: no Excel dialog in this test)
 await B.js(`__xl.click(2)`);
-await until(() => B.js(`!!document.querySelector('#selRide [data-a=edit]')`), 'clicking row 2 shows Ava');
-await B.js(`document.querySelector('#selRide [data-a=edit]').click()`);
-await B.js(`document.getElementById('fPu').value = 'Welch Hall'; document.querySelector('#selRide [data-a=editGo]').click()`);
+await until(() => B.js(`!!document.querySelector('#selRide [data-a=route]') && document.getElementById('cName').textContent.includes('Ava')`), 'clicking row 2 shows Ava in Calling');
+await B.js(`document.querySelector('#selRide [data-a=route][data-which=pu]').click()`);
+ok(await B.js(`document.activeElement && document.activeElement.id === 'cPu' && !!document.getElementById('cDo')`), 'clicking the pick-up card edits it in place');
+await B.js(`document.getElementById('cPu').value = 'Welch Hall'; document.querySelector('#selRide [data-a=routeSave]').click()`);
 await until(() => B.js(`__xl.text(2,'${C.pu}') === 'Welch Hall'`), 'pick-up changed in the sheet');
 await until(async () => (await rideOf('5125550101')).pickup === 'Welch Hall', 'texting server got the new pick-up');
-await B.js(`document.querySelector('#selRide [data-a=undo]').click()`);
+await B.js(`document.getElementById('toastUndo').click()`);
 await until(async () => (await rideOf('5125550101')).pickup === 'PCL', 'undo restored PCL in the sheet and the server');
 
 console.log('a new ride the dispatcher calls first is not texted');
 await B.js(`__xl.row(5, ${JSON.stringify(ride(4, 0, 'Dee', 'Park', '5125550104', 'PCL', 'Kins'))})`);
 await B.js(`__xl.click(5)`);
-await until(() => B.js(`!!document.querySelector('#selRide [data-a=called]:not([disabled])') && document.querySelector('#selRide h2').textContent.includes('Dee')`), 'Dee selected');
+await until(() => B.js(`!!document.querySelector('#selRide [data-a=called]:not([disabled])') && document.getElementById('cName').textContent.includes('Dee')`), 'Dee selected');
 await B.js(`document.querySelector('#selRide [data-a=called]').click()`);
 await until(() => B.js(`__xl.text(5,'${C.call}') === '22:00' && __xl.text(5,'${C.disp}') === 'T. Tester'`), 'Mark called: F5 = now, Dispatcher = my name');
 await until(async () => { const r = await rideOf('5125550104'); return r && r.call === '22:00'; }, 'texting server sees Dee as called');
 res = await bridge();
 ok(!(res.outbox || []).some(o => o.to.endsWith('5550104')), 'Dee is not texted');
 
+ok(await B.js(`SWT.cl.sel === null ? /No one to call/.test(document.getElementById('selRide').textContent) : !document.getElementById('cName').textContent.includes('Dee')`), 'after Mark called, Calling moves on (next rider to call, or "No one to call")');
+
 console.log('cancel + duplicate from the panel');
-await B.js(`document.querySelector('#selRide [data-a=dup]').click()`);
+await B.js(`__xl.click(5)`); await sleep(400); // back to Dee (clicking the row in the sheet)
+await B.js(`document.querySelector('#selRide [data-a=dup]').click()`); await sleep(200);
+await B.js(`document.querySelector('#selRide [data-a=dupGo]').click()`);
 await until(() => B.js(`__xl.bg(5,'A') === '#FF0000'`), 'duplicate: row 5 red');
 await until(async () => (await rideOf('5125550104')).sheetState === 'dup', 'texting server sees the duplicate');
 await B.js(`__xl.click(2)`); await sleep(300);
-await B.js(`document.querySelector('#selRide [data-a=cancel]').click()`);
-await B.js(`document.getElementById('fReason').value = 'Not Answering'; document.querySelector('#selRide [data-a=cancelGo]').click()`);
+await B.js(`document.querySelector('#selRide [data-a=cancel]').click()`); await sleep(200);
+await B.js(`document.querySelector('#selRide [data-reason="No answer"]').click()`); await sleep(100);
+await B.js(`document.querySelector('#selRide [data-a=cancelGo]').click()`);
 await until(() => B.js(`__xl.bg(2,'A') === '#000000' && __xl.text(2,'${C.rsn}') === 'Not Answering' && __xl.text(2,'${C.call}') === ''`), 'cancel: row 2 black, reason, Call Time cleared');
 await until(async () => (await rideOf('5125550101')).sheetState === 'cancelled', 'texting server sees the cancel');
 
@@ -313,7 +333,7 @@ ok(await B.js(`__xl.text(${nr},'A') === '' && /^Added in the Texts panel by T\. 
 ok(await B.js(`__xl.text(${nr},'${L(idx(/^Email Address/))}') === 'gus.hand@utexas.edu'`), 'email filled');
 ok(await B.js(`__xl.text(${nr},'${L(idx(/^I have read/))}') === 'I agree and adhere to the rules and guidelines laid out above.' && __xl.text(${nr},'${L(idx(/^All pick up/))}') === 'I understand and have verified my pick-up location.' && __xl.text(${nr},'${L(idx(/food establishment/))}') === 'I understand.'`), 'the three agreements filled like the form');
 ok(await B.js(`(() => { const r = SWT.X.byRow.get(${nr}); return !!r && r.id.charAt(0) === 't' && r.f.ts.slice(0, 16) === SWP.austin().slice(0, 16) && r.f.phone === '5125550160'; })()`), 'the row reads back as tonight\'s ride, submitted now');
-ok(await B.js(`document.getElementById('addCard').hidden && document.querySelector('#selRide h2').textContent.includes('Gus')`), 'form closes and the new ride is selected');
+ok(await B.js(`document.getElementById('addCard').hidden && document.getElementById('cName').textContent.includes('Gus')`), 'form closes and the new ride is selected');
 if (process.env.TABLE) ok(await B.js(`__xl.writes.includes('table row added') && __xl.tableRows() === ${nr}`), 'rides in an Excel table: the row is added through the table');
 const gus = await until(async () => { const r = await bridge(); return (r.outbox || []).find(o => o.to.endsWith('5550160')); }, 'texting server texts the manual ride');
 await bridge([], gus ? [{ outId: gus.outId, status: 'sent' }] : []);
@@ -345,7 +365,7 @@ if (jrow) {
   ok(await B.js(`__xl.text(${jrow},'${C.pu}') === 'Welch Hall' && __xl.text(${jrow},'${L(idx(/^Do you require/))}') === 'Yes' && __xl.text(${jrow},'${L(idx(/^UT EID/))}') === 'jd1' && __xl.text(${jrow},'A') === ''`), 'pick-up (formula sign stripped), ADA, EID filled; Id blank');
   ok(await B.js(`__xl.text(${jrow},'${L(idx(/^Notes/))}') === 'Added on the texting computer #${ja.id} — walk-in'`), 'Notes tag the request id');
   ok(await B.js(`__xl.text(${jrow},'${L(idx(/^Email Address/))}') === 'jo.desk@utexas.edu' && __xl.text(${jrow},'${L(idx(/^I have read/))}').startsWith('I agree and adhere') && __xl.text(${jrow},'${L(idx(/food establishment/))}') === 'I understand.'`), 'dashboard add: email and agreements filled');
-  ok(await B.js(`!document.querySelector('#selRide h2') || !document.querySelector('#selRide h2').textContent.includes('Jo ')`), "the dispatcher's selection isn't changed");
+  ok(await B.js(`!document.getElementById('cName') || !document.getElementById('cName').textContent.includes('Jo ')`), "the dispatcher's selection isn't changed");
 }
 await until(async () => { const s = await (await fetch(`http://127.0.0.1:${SPORT}/api/status`, { method: 'POST', headers: { 'X-SW-Token': TOKEN } })).json(); return (s.adds || []).some(a => a.id === ja.id && a.state === 'added' && +a.row === jrow); }, 'server status: the add shows as added, with its row');
 const jt = await until(async () => { const r = await bridge(); return (r.outbox || []).find(o => o.to.endsWith('5550170')); }, 'the dashboard\'s ride gets its confirmation text');
@@ -384,6 +404,50 @@ ok(!JSON.stringify(etaRows()).match(/Lia|Eta"|5550180|Stone|5550101/), 'no names
 ok((fs.statSync(path.join(TMP, 'state', 'eta.json')).mode & 0o077) === 0, 'eta.json readable only by the user');
 ok((await rpc('getState')).etaUrl === '/eta.csv', 'Settings links the ETA log');
 ok((await (await fetch(`http://127.0.0.1:${SPORT}/eta.csv`)).text()).startsWith('Night,Row,Requested'), '/eta.csv downloads it');
+
+console.log('👥 traveling together (group letter in the Confirmed column) + Mark not ADA');
+const idOf = phone => B.js(`(SWT.X.rides.find(x => x.f.phone === '${phone}') || {}).id`);
+const ivyId = await idOf('5125550162'), joId = await idOf('5125550170');
+const ivyRow = await sheetRowOf('5125550162'), joRow = await sheetRowOf('5125550170');
+const ADA = L(idx(/^Do you require/));
+if (C.txs) {
+  await B.js(`SWT.cl.filter = 'all'; SWT.choose(${JSON.stringify(ivyId)}, false); document.querySelector('#selRide [data-a=pick]').click(), 1`); await sleep(200);
+  await B.js(`document.querySelector('#selRide [data-pick="${joId}"]').click(), 1`); await sleep(100);
+  await B.js(`document.querySelector('#selRide [data-a=groupGo]').click(), 1`);
+  const grp = await until(() => B.js(`(() => { const a = __xl.text(${ivyRow},'${C.txs}'), b = __xl.text(${joRow},'${C.txs}'); return /^Group [A-H]$/.test(a) && a === b.replace(/^.* · /, '') && a; })()`), 'Ivy + Jo grouped: same "Group X" in their Confirmed cells');
+  ok(await B.js(`/👥 [A-H] · 2/.test(document.getElementById('list').textContent) && !!document.querySelector('#selRide .gcard')`), 'group badge in the list, group card on the ride');
+  await sleep(2500); // the group reaches the texting computer through the chat
+  const jy = await bridge([{ id: 'grp1', from: '+15125550170', text: 'yes', ts: NOW + 400e3 }]);
+  await bridge([], (jy.outbox || []).map(o => ({ outId: o.outId, status: 'sent' })));
+  await until(() => B.js(`/^\\d{1,2}:\\d{2} · ${grp}$/.test(__xl.text(${joRow},'${C.txs}'))`), `Jo says YES: the texting computer's time joins the group ("H:MM · ${grp}")`);
+  await B.js(`SWT.choose(${JSON.stringify(ivyId)}, false); document.querySelector('#selRide [data-a=ungroup][data-id="${ivyId}"]').click(), 1`);
+  await until(() => B.js(`__xl.text(${ivyRow},'${C.txs}') === '' && /^\\d{1,2}:\\d{2}$/.test(__xl.text(${joRow},'${C.txs}'))`), 'removing Ivy dissolves a group of 2: Ivy blank, Jo keeps only the time');
+}
+await B.js(`SWT.cl.filter = 'all'; SWT.choose(${JSON.stringify(joId)}, false), 1`); await sleep(200);
+await B.js(`document.querySelector('#selRide [data-a=notAda]').click(), 1`);
+await until(() => B.js(`__xl.text(${joRow},'${ADA}') === 'No'`), 'Mark not ADA: the ADA cell becomes No');
+
+console.log('Calling in its own window (Excel dialog stand-in): the side panel does the sheet work');
+await B.js(`(() => {
+  SWT.closeCalling(); window.__SWT_HOSTED = true; window.SWT_TEST.callingUrl = '/panel?remote=1';
+  Office.EventType = { DialogMessageReceived: 'm', DialogEventReceived: 'e' }; Office.AsyncResultStatus = { Succeeded: 'succeeded' };
+  Office.context = { ui: { displayDialogAsync(url, o, cb) {
+    const f = document.createElement('iframe'); f.id = 'dlgFrame'; f.src = url; f.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;border:0;z-index:99;background:#fff';
+    const hs = {}; window.__dlgMsg = m => { if (hs.m) hs.m({ message: m }); };
+    document.body.appendChild(f);
+    cb({ status: 'succeeded', value: { addEventHandler(t, h) { hs[t] = h; }, messageChild(m) { if (f.contentWindow.__fromParent) f.contentWindow.__fromParent(m); }, close() { f.remove(); if (hs.e) hs.e({}); } } });
+  } } };
+  SWT.openCalling(); return 1; })()`);
+const W = `document.getElementById('dlgFrame').contentWindow`;
+await until(() => B.js(`!!document.getElementById('dlgFrame') && ${W}.document.querySelectorAll('#list .crow').length > 0 && ${W}.document.getElementById('home').hidden !== undefined`), 'the Calling window opens and gets the rides from the side panel');
+ok(await B.js(`document.getElementById('calling').hidden && getComputedStyle(${W}.document.getElementById('home')).display === 'none'`), 'side panel keeps its launcher; the window shows only Calling');
+const hRow = await sheetRowOf('5125550162');
+await B.js(`${W}.SWT.cl.filter = 'all'; ${W}.SWT.choose(${JSON.stringify(ivyId)}, false); 1`); await sleep(300);
+await B.js(`${W}.document.querySelector('#selRide [data-a=called]').click(), 1`);
+await until(() => B.js(`/^\\d{1,2}:\\d{2}$/.test(__xl.text(${hRow},'${C.call}'))`), 'Mark called in the window: the side panel writes the Call Time');
+await until(() => B.js(`/Ivy/.test(${W}.document.getElementById('toastTxt').textContent) && !${W}.document.getElementById('toastUndo').hidden`), 'the window shows the toast with Undo');
+await B.js(`${W}.document.getElementById('toastUndo').click(), 1`);
+await until(() => B.js(`__xl.text(${hRow},'${C.call}') === ''`), 'Undo from the window puts the sheet back');
 
 console.log('privacy');
 const all = evs();

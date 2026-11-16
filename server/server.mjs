@@ -220,6 +220,9 @@ async function loop() {
 // H:MM of the rider's YES (the texting code's confirmedAt). Only the time: never what anyone wrote.
 const hm = ms => { const d = new Date(ms); return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`; }; // TZ is Austin
 const confirmTime = rec => (rec && (rec.confirmedAt || rec.state === 'confirmed') ? hm(rec.confirmedAt || rec.lastInAt || Date.now()) : '');
+// The cell also holds the calling panel's "traveling together" group ("9:40 · Group A"): only the time is ours to set.
+const cfGroup = s => (/\bGroup ([A-H])\b/.exec(String(s || '')) || [])[1] || '';
+const cfJoin = (t, g) => [t, g ? 'Group ' + g : ''].filter(Boolean).join(' · ');
 function syncTextStatus() {
   if (typeof globalThis.loadTx_ !== 'function') return;
   const tx = globalThis.loadTx_();
@@ -229,7 +232,9 @@ function syncTextStatus() {
     const t = confirmTime(rec);
     if (!t) return;
     const r = (byRow[rec.row] || []).find(x => String(x.f.phone || '').replace(/\D/g, '').slice(-10) === rec.phone10);
-    if (r && !SWP.same('txs', r.f.txs, t)) gas.setField(r.id, 'txs', t);
+    if (!r) return;
+    const want = cfJoin(t, cfGroup(r.f.txs));
+    if (!SWP.same('txs', r.f.txs, want)) gas.setField(r.id, 'txs', want);
   });
 }
 
