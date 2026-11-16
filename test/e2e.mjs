@@ -8,7 +8,8 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url)), ROOT = path.dirname(HERE);
 const TMP = process.env.TMPDIR_E2E || fs.mkdtempSync('/tmp/swt-');
-const GPORT = 8791, SPORT = 8792, CPORT = 9339;
+const PB = +process.env.E2E_PORT_BASE || 0; // another run on this PC at the same time? set E2E_PORT_BASE (e.g. 100)
+const GPORT = 8791 + PB, SPORT = 8792 + PB, CPORT = 9339 + PB;
 const NOW = Date.UTC(2026, 10, 12, 4, 0); // 10:00 PM in Austin, Wed Nov 11 2026
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 let fails = 0, passes = 0;
@@ -69,7 +70,7 @@ const SHEET = { rows: [HEADER,
   ride(1, 3, 'Ava', 'Stone', '5125550101', 'PCL', 'Jester West'),
   ride(2, 2, 'Ben', 'Ortiz', '5125550102', 'Kins', 'Duren'),
   ride(3, 10, 'Cara', 'Wu', '5125550103', 'Gregory Gym', 'Dobie', { rsn: 'Not Ready' }),
-], paint: [[4, '#000000', '#FFFFFF']] };
+], paint: [[4, '#000000', '#FFFFFF']], table: !!process.env.TABLE }; // TABLE=1: the rides are an Excel table
 function panelPage(click) {
   const html = fs.readFileSync(path.join(ROOT, 'excel/panel.html'), 'utf8');
   const clock = `(() => { const R = Date, T0 = ${NOW}, R0 = R.now(); window.Date = class extends R { constructor(...a) { super(...(a.length ? a : [T0 + R.now() - R0])); } static now() { return T0 + R.now() - R0; } }; })();`;
@@ -109,7 +110,7 @@ function server() {
   fs.mkdirSync(cfg, { recursive: true });
   fs.writeFileSync(path.join(cfg, 'config.json'), JSON.stringify({ token: 'tok_' + 'b'.repeat(30), groupId: 'g1', groupName: 'SURE Walk Texts sync' }));
   const p = spawn(process.execPath, ['--import', 'data:text/javascript,' + encodeURIComponent(`const R=Date,T0=${NOW},R0=R.now();globalThis.Date=class extends R{constructor(...a){super(...(a.length?a:[T0+R.now()-R0]))}static now(){return T0+R.now()-R0}};`), path.join(ROOT, 'server/server.mjs')], {
-    env: Object.assign({}, process.env, { PORT: SPORT, SUREWALK_STATE: path.join(TMP, 'state'), XDG_CONFIG_HOME: path.join(TMP, 'cfg'), GROUPME_API: `http://127.0.0.1:${GPORT}/v3`, SW_POLL_MS: 700, SW_POST_GAP_MS: 200 }),
+    env: Object.assign({}, process.env, { PORT: SPORT, SUREWALK_STATE: path.join(TMP, 'state'), XDG_CONFIG_HOME: path.join(TMP, 'cfg'), GROUPME_API: `http://127.0.0.1:${GPORT}/v3`, SW_POLL_MS: 700, SW_POST_GAP_MS: 200, SW_SEND_GAP_MS: 0 }),
     stdio: ['ignore', 'pipe', 'pipe'] });
   let out = ''; p.stdout.on('data', d => { out += d; }); p.stderr.on('data', d => { out += d; });
   return { p, out: () => out };
@@ -286,6 +287,41 @@ const testPoll2 = await until(async () => {
 await bridge([], testPoll2 ? [{ outId: testPoll2.outId, status: 'sent' }] : []);
 const q1Custom = await bridge([{ id: 'tp2', from: '+15125557777', text: 'mobile app with live map', ts: NOW + 130e3 }]);
 ok((q1Custom.outbox || []).some(o => o.to.endsWith('5557777') && /2\/3/.test(o.body)), 'replying custom idea to Q1 advances to question 2/3');
+
+console.log('＋ Ride: a ride added by hand');
+const addRide = async (f, called) => {
+  await B.js(`document.getElementById('addBtn').click()`);
+  await B.js(`(() => { const f = ${JSON.stringify(f)}; Object.keys(f).forEach(k => { document.getElementById(k).value = f[k]; }); document.getElementById('aCalled').checked = ${!!called}; document.getElementById('aSave').click(); })()`);
+};
+const lastRideRow = async () => B.js(`Math.max(...SWT.X.rides.map(r => r.row))`);
+const before = await lastRideRow();
+await addRide({ aFirst: '', aPhone: '5125550160', aPu: 'PCL', aDo: 'Kins' });
+await sleep(300);
+ok(await B.js(`/first name/.test(document.getElementById('aMsg').textContent) && !document.getElementById('addCard').hidden`), 'missing first name: form stays open with a message');
+await B.js(`document.getElementById('aClose').click()`);
+await addRide({ aFirst: 'Gus', aLast: 'Hand', aPhone: '(512) 555-0160', aEid: 'gh123', aPu: 'Jester West', aDo: 'Dobie', aAda: 'Yes', aNotes: 'called the line' });
+const nr = before + 1;
+await until(() => B.js(`__xl.text(${nr},'${C.first}') === 'Gus'`), `manual ride written to row ${nr}`);
+ok(await B.js(`__xl.text(${nr},'A') === '' && /^Added in the Texts panel by T\. Tester — called the line$/.test(__xl.text(${nr},'${L(idx(/^Notes/))}')) && __xl.text(${nr},'${L(idx(/^UT EID/))}') === 'gh123' && __xl.text(${nr},'${L(idx(/^Do you require/))}') === 'Yes'`), 'Id blank; EID, ADA and Notes (who added it) filled');
+ok(await B.js(`(() => { const r = SWT.X.byRow.get(${nr}); return !!r && r.id.charAt(0) === 't' && r.f.ts.slice(0, 16) === SWP.austin().slice(0, 16) && r.f.phone === '5125550160'; })()`), 'the row reads back as tonight\'s ride, submitted now');
+ok(await B.js(`document.getElementById('addCard').hidden && document.querySelector('#selRide h2').textContent.includes('Gus')`), 'form closes and the new ride is selected');
+if (process.env.TABLE) ok(await B.js(`__xl.writes.includes('table row added') && __xl.tableRows() === ${nr}`), 'rides in an Excel table: the row is added through the table');
+const gus = await until(async () => { const r = await bridge(); return (r.outbox || []).find(o => o.to.endsWith('5550160')); }, 'texting server texts the manual ride');
+await bridge([], gus ? [{ outId: gus.outId, status: 'sent' }] : []);
+await B.js(`document.querySelector('#selRide [data-a=called]').click()`);
+await until(() => B.js(`__xl.text(${nr},'${C.call}') === '22:00' || /^[0-9]+:[0-9][0-9]$/.test(__xl.text(${nr},'${C.call}'))`), 'panel actions work on a row without an Id (Mark called)');
+await addRide({ aFirst: 'Hal', aLast: 'Phone', aPhone: '5125550161', aPu: 'PCL', aDo: 'Kins' }, true);
+await until(() => B.js(`__xl.text(${nr + 1},'${C.first}') === 'Hal' && __xl.text(${nr + 1},'${C.disp}') === 'T. Tester' && /^[0-9]+:[0-9][0-9]$/.test(__xl.text(${nr + 1},'${C.call}'))`), '"mark called now": Call Time + Dispatcher filled');
+await until(async () => { const r = await rideOf('5125550161'); return r && r.call; }, 'texting server sees Hal as called');
+ok(!((await bridge()).outbox || []).some(o => o.to.endsWith('5550161')), 'Hal is not texted');
+await B.js(`window.confirm = () => false`);
+await addRide({ aFirst: 'Hal', aPhone: '5125550161', aPu: 'PCL', aDo: 'Kins' });
+await sleep(800);
+ok(await B.js(`__xl.text(${nr + 2},'${C.first}') === '' && !document.getElementById('addCard').hidden`), 'same phone already open tonight: asks first, adds nothing on No');
+await B.js(`window.confirm = () => true; document.getElementById('aClose').click()`);
+await B.js(`__xl.row(${nr + 2}, ['', '', 'DRIVER', 'NAV'])`); // something under the rides (an old-style roster)
+await addRide({ aFirst: 'Ivy', aPhone: '5125550162', aPu: 'PCL', aDo: 'Kins' });
+await until(() => B.js(`__xl.text(${nr + 2},'${C.first}') === 'Ivy' && __xl.text(${nr + 3},'C') === 'DRIVER' && __xl.writes.some(w => /inserted/.test(w))`), 'row under the rides not blank: a row is inserted, nothing overwritten');
 
 console.log('privacy');
 const all = evs();

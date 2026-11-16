@@ -63,7 +63,7 @@
     ['id', /^id$/], ['ts', /^(form submitted|timestamp|completion time)/], ['date', /^date$/], ['stime', /^(submitted time|time submitted)$/], ['disp', /^dispatch/], ['call', /^call time/], ['arr', /^arrival/],
     ['last', /^last name/], ['first', /^first name/], ['phone', /^phone/], ['pu', /^pick ?-?up/], ['do', /^drop ?-?off/],
     ['ada', /disabilit|^ada\b/], ['loc', /^location$/], ['van', /^(van|vehicle)/], ['drv', /^driver$/], ['nav', /^navigator$/],
-    ['rsn', /^reason/], ['rsn', /cancel/],
+    ['rsn', /^reason/], ['rsn', /cancel/], ['eid', /^(ut )?eid/], ['notes', /^notes?$/],
   ];
   function layoutOf(header) {
     const h = header.map(x => String(x || '').toLowerCase().replace(/[^a-z0-9 -]/g, ' ').replace(/\s+/g, ' ').trim());
@@ -90,6 +90,13 @@
     return `${day} ${pad(mt[1])}:${mt[2]}:00`;
   }
   const letter = n => { let s = ''; while (n) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; };
+  // The ride's key: 'f' + the form's Id, or (no Id: a row added by hand) its time + the phone's last 4 digits.
+  function rideId(col, v, t, ts) {
+    const idv = col.id ? String(v[col.id - 1] == null ? '' : v[col.id - 1]).trim() : '';
+    if (idv) return 'f' + idv;
+    const ph = String(t[col.phone - 1] == null ? '' : t[col.phone - 1]).replace(/\D/g, ''), fi = String(t[col.first - 1] || '').trim().toLowerCase();
+    return 't' + ts.replace(/\D/g, '') + (ph.slice(-4) || fi);
+  }
   const RIDE_FIELDS = ['first', 'last', 'phone', 'pu', 'do', 'ada', 'disp', 'call', 'arr', 'loc', 'van', 'drv', 'nav', 'rsn'];
 
   /* ---------------- reading ---------------- */
@@ -131,7 +138,7 @@
       const col = layoutOf(hdr.text[0]);
       const lastRow = used.isNullObject ? 1 : used.rowIndex + used.rowCount;
       const top = Math.max(2, lastRow - SCAN_ROWS - 60);
-      if (lastRow < top) return { name: ws.name, col, rides: [] };
+      if (lastRow < top) return { name: ws.name, col, rides: [], lastRow };
       const rg = ws.getRangeByIndexes(top - 1, 0, lastRow - top + 1, READ_COLS);
       rg.load('values,text');
       const props = rg.getCellProperties({ format: { fill: { color: true }, font: { color: true } } });
@@ -150,11 +157,11 @@
         if (f.rsn === '0') f.rsn = '';
         if (/^#+$/.test(f.phone)) f.phone = String(v[col.phone - 1]);
         f.bg = rowColor(cells, rideCols);
-        const idv = col.id ? String(v[col.id - 1] == null ? '' : v[col.id - 1]).trim() : '';
-        const id = idv ? 'f' + idv : 't' + ts.replace(/\D/g, '') + (f.phone.replace(/\D/g, '').slice(-4) || f.first.toLowerCase());
+        if (/^#+$/.test(String(t[col.phone - 1]))) t[col.phone - 1] = f.phone;
+        const id = rideId(col, v, t, ts);
         rides.push({ id, row: top + i, f, cells });
       }
-      return { name: ws.name, col, rides };
+      return { name: ws.name, col, rides, lastRow };
     });
     await clearCopiedColors(X);
     X.byId = new Map(X.rides.map(r => [r.id, r]));
@@ -221,7 +228,7 @@
     const rg = ws.getRangeByIndexes(r.row - 1, 0, 1, READ_COLS); rg.load('values,text');
     await ctx.sync();
     const col = X.col, v = rg.values[0], t = rg.text[0];
-    const idOk = col.id ? 'f' + String(v[col.id - 1]).trim() === r.id : true;
+    const idOk = col.id ? rideId(col, v, t, rowTs(col, v, t)) === r.id || r.id.charAt(0) !== 'f' && !String(v[col.id - 1]).trim() : true;
     const ph = String(t[col.phone - 1] || '').replace(/\D/g, '').slice(-10), want = String(r.f.phone || '').replace(/\D/g, '').slice(-10);
     if (!idOk || ph !== want) throw new Error(`Row ${r.row} isn't ${r.f.first}'s ride anymore — reload the list and try again.`);
     return { v, t };
@@ -303,6 +310,63 @@
       if (keys.includes('do')) writeField(ws, r.row, 'do', dropoff);
     });
   };
+
+  /*
+   * A ride added by hand (a rider who called in, the form being down…): a new row under the last ride, filled like a
+   * form response. The Id stays blank (the form numbers its own responses, so a made-up Id could clash with the next
+   * one) and Notes says who added it. With sync on, the next tick posts it like any new ride, so it gets texted
+   * unless "called" is ticked.
+   */
+  const wallToSerial = w => wallMs(w) / 864e5 + 25569;
+  async function addRide(a) {
+    await readSheet();
+    const col = X.col, w = SWP.austin(), lastRide = X.rides.length ? Math.max(...X.rides.map(r => r.row)) : 0;
+    const vals = {}; // column -> value
+    const put = (k, v) => { if (col[k] && v !== '' && v != null) vals[col[k]] = v; };
+    if (col.ts) put('ts', wallToSerial(w)); else { put('date', Math.floor(wallToSerial(w))); put('stime', hmToSerial(`${+w.slice(11, 13)}:${w.slice(14, 16)}`)); }
+    ['first', 'last', 'phone', 'eid', 'pu', 'do', 'ada'].forEach(k => put(k, a[k]));
+    if (a.called) { put('call', hmToSerial(nowHM())); if (set.name) put('disp', set.name); }
+    put('notes', [`Added in the Texts panel${set.name ? ' by ' + set.name : ''}`, a.notes].filter(Boolean).join(' — '));
+    const timeFmt = { ts: 'm/d/yyyy h:mm', date: 'm/d/yyyy', stime: 'h:mm AM/PM', call: 'h:mm' };
+    const row = await Excel.run(async ctx => {
+      const ws = await sheetOf(ctx, true);
+      let row = (lastRide || Math.max(1, X.lastRow)) + 1;
+      const above = ws.getRangeByIndexes(row - 2, 0, 1, READ_COLS), next = ws.getRangeByIndexes(row - 1, 0, 1, READ_COLS);
+      above.load('numberFormat,formulasR1C1'); next.load('values');
+      const tables = ws.tables; if (tables) tables.load('items/name');
+      await ctx.sync();
+      // the rides are an Excel table (form responses) ending right above? add the row through the table
+      let table = null;
+      if (tables && tables.items.length) {
+        const rgs = tables.items.map(tb => { const r = tb.getRange(); r.load('rowIndex,rowCount,columnIndex,columnCount'); return { tb, r }; });
+        await ctx.sync();
+        const hit = rgs.find(x => x.r.rowIndex + x.r.rowCount === row - 1 && x.r.columnIndex < READ_COLS);
+        if (hit) table = hit;
+      }
+      if (table) table.tb.rows.add(); // an empty table row: Excel fills its calculated columns (Wait Time…)
+      else {
+        if (next.values[0].some(v => v !== '' && v != null)) ws.getRange(`${row}:${row}`).insert('Down'); // something sits under the rides
+        above.formulasR1C1[0].forEach((f, j) => { // carry the row above's formulas (Wait Time…) down
+          if (vals[j + 1] === undefined && typeof f === 'string' && f.charAt(0) === '=') ws.getRangeByIndexes(row - 1, j, 1, 1).formulasR1C1 = [[f]];
+        });
+      }
+      Object.keys(vals).forEach(c => { ws.getRangeByIndexes(row - 1, c - 1, 1, 1).values = [[vals[c]]]; });
+      Object.keys(timeFmt).forEach(k => {
+        if (!col[k] || vals[col[k]] === undefined) return;
+        const f = above.numberFormat[0][col[k] - 1];
+        ws.getRangeByIndexes(row - 1, col[k] - 1, 1, 1).numberFormat = [[f && f !== 'General' ? f : timeFmt[k]]];
+      });
+      const all = ws.getRange(`${row}:${row}`); all.format.fill.clear(); all.format.font.color = '#000000'; // not the row above's highlight
+      await ctx.sync();
+      return row;
+    });
+    feed(`Added ride: ${who(a)} (row ${row})`);
+    toast(`Added ${who(a)}'s ride — row ${row}`);
+    await refresh();
+    const r = X.byRow.get(row);
+    if (r) choose(r.id, true);
+    return row;
+  }
 
   /* ---------------- GroupMe sync ---------------- */
   const S = { rides: {} };               // the rides as the chat describes them
@@ -569,10 +633,38 @@
     }
   }
 
+  // ＋ Ride: add a ride by hand
+  function showAdd(on) {
+    $('addCard').hidden = !on;
+    if (!on) return;
+    $('setCard').hidden = true;
+    $('addCard').querySelectorAll('input:not([type=checkbox]), textarea').forEach(el => { el.value = ''; });
+    $('aAda').value = 'No'; $('aCalled').checked = false; $('aMsg').textContent = '';
+    $('aEidRow').hidden = !!(X && !X.col.eid);
+    $('aFirst').focus();
+  }
+  $('addBtn').addEventListener('click', () => showAdd($('addCard').hidden));
+  $('aClose').addEventListener('click', () => showAdd(false));
+  $('addCard').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); $('aSave').click(); } });
+  $('aSave').addEventListener('click', () => busyBtn($('aSave'), async () => {
+    const g = id => $(id).value.trim();
+    let phone = g('aPhone').replace(/\D/g, '');
+    if (phone.length === 11 && phone.charAt(0) === '1') phone = phone.slice(1);
+    const a = { first: g('aFirst'), last: g('aLast'), phone, eid: g('aEid'), pu: g('aPu'), do: g('aDo'), ada: $('aAda').value, notes: g('aNotes'), called: $('aCalled').checked };
+    const miss = [['first', 'first name'], ['pu', 'pick-up'], ['do', 'drop-off']].filter(([k]) => !a[k]).map(x => x[1]);
+    if (miss.length) { $('aMsg').textContent = 'Fill in the ' + miss.join(', ') + '.'; return; }
+    if (phone.length !== 10) { $('aMsg').textContent = 'The phone number needs 10 digits.'; return; }
+    const same = X && X.tonight.find(r => stateOf(r) === 'open' && r.f.phone.replace(/\D/g, '').slice(-10) === phone);
+    if (same && !confirm(`${who(same.f)} already has an open ride tonight with that phone (row ${same.row}). Add another one anyway?`)) return;
+    await addRide(a);
+    showAdd(false);
+  }));
+
   // settings
   function showSettings(on) {
     $('setCard').hidden = !on;
     if (!on) return;
+    $('addCard').hidden = true;
     $('setName').value = set.name; $('setDispName').checked = !!set.dispName; $('setTab').value = set.tab;
     $('setTok').value = ''; $('setTok').placeholder = set.token ? 'Saved (paste a new one to change it)' : 'X-Access-Token from web.groupme.com';
     $('setGrp').innerHTML = set.groupId ? `<option value="${esc(set.groupId)}">${esc(set.groupName)}</option>` : '<option value="">— load chats first —</option>';

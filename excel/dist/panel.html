@@ -66,6 +66,7 @@
 <div class="bar">
   <span>SURE Walk Texts</span><span class="sp"></span>
   <span class="sync" id="syncLbl" title="GroupMe sync"><span class="dot" id="syncDot"></span><span id="syncTxt">Sync off</span></span>
+  <button id="addBtn" title="Add a ride by hand (not through the form)">＋ Ride</button>
   <button id="restartBtn" title="Restart the panel (reloads it with the newest version)">↻ Restart</button>
   <button id="setBtn" title="Settings">⚙</button>
 </div>
@@ -87,6 +88,22 @@
       <h2 style="margin-top:8px">Test texting &amp; polls</h2>
       <div class="small muted">Open the texting dashboard at <a href="http://127.0.0.1:8787" target="_blank" style="color:var(--accent);font-weight:600">http://127.0.0.1:8787</a> on the texting PC to edit templates, send test texts, and trigger test polls to your phone.</div>
       <div class="row2"><button class="btn primary" id="setSave">Save</button><button class="btn" id="setClose">Close</button></div>
+    </div>
+  </section>
+
+  <section class="card" id="addCard" hidden>
+    <div class="set">
+      <h2>Add a ride by hand</h2>
+      <div class="small muted">For a rider who called in or couldn't use the form. Adds a row under the last ride, like a form response (the Id stays blank).</div>
+      <div class="row2"><label>First name<input id="aFirst" autocomplete="off"></label><label>Last name<input id="aLast" autocomplete="off"></label></div>
+      <div class="row2"><label>Phone<input id="aPhone" type="tel" inputmode="numeric" autocomplete="off" placeholder="10 digits"></label><label id="aEidRow">UT EID<input id="aEid" autocomplete="off" placeholder="or N/A"></label></div>
+      <label>Pick-up<input id="aPu" autocomplete="off"></label>
+      <label>Drop-off<input id="aDo" autocomplete="off"></label>
+      <label>ADA assistance<select id="aAda"><option>No</option><option>Yes</option></select></label>
+      <label>Notes (optional)<input id="aNotes" autocomplete="off"></label>
+      <label class="sw">Already talked to them — mark called now (no confirmation text)<input type="checkbox" id="aCalled"></label>
+      <div class="small err" id="aMsg" role="status"></div>
+      <div class="row2"><button class="btn primary" id="aSave">Add ride</button><button class="btn" id="aClose">Close</button></div>
     </div>
   </section>
 
