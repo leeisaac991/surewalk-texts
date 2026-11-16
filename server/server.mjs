@@ -208,7 +208,6 @@ async function loop() {
     if (!conf.token || !conf.groupId) { sync.ready = false; return; }
     if (!sync.ready) { await backfill(); sync.ready = true; }
     else await poll();
-    run(() => {}); // Text statuses move with the clock too ("Texted" -> "No reply")
     if (Date.now() >= nextPostAt && outLines.length) { await postPending(); nextPostAt = Date.now() + POST_GAP_MS; }
     sync.lastPollAt = Date.now(); sync.lastError = '';
   } catch (e) {
@@ -217,37 +216,26 @@ async function loop() {
   } finally { loopBusy = false; }
 }
 
-/* ---------------- the "Text" column: each texted rider's status, for dispatchers ---------------- */
-// From the texting code's own records: "Confirmed 21:40" (said YES), "Replied 21:41" (answered, no YES),
-// "No reply 21:38" (texted at 21:38, nothing back after the No-reply minutes), "Texted 21:38", "Opted out",
-// "Cancelled by text". Only the status: never what anyone wrote. Rides we never texted get nothing.
+/* ---------------- the "Confirmed" column: when each rider said YES to our text, for dispatchers ---------------- */
+// H:MM of the rider's YES (the texting code's confirmedAt). Only the time: never what anyone wrote.
 const hm = ms => { const d = new Date(ms); return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`; }; // TZ is Austin
-function textStatus(rec, now, noReplyMin) {
-  if (!rec) return '';
-  if (rec.state === 'optedout') return 'Opted out';
-  if (rec.state === 'cancelled' && /by text/i.test(rec.note || '')) return 'Cancelled by text';
-  if (rec.confirmedAt || rec.state === 'confirmed') return 'Confirmed ' + hm(rec.confirmedAt || rec.lastInAt || now);
-  if (!rec.textedAt) return '';
-  if ((rec.lastInAt || 0) >= rec.textedAt - 60e3) return 'Replied ' + hm(rec.lastInAt);
-  return (now - rec.textedAt > noReplyMin * 60e3 ? 'No reply ' : 'Texted ') + hm(rec.textedAt);
-}
+const confirmTime = rec => (rec && (rec.confirmedAt || rec.state === 'confirmed') ? hm(rec.confirmedAt || rec.lastInAt || Date.now()) : '');
 function syncTextStatus() {
   if (typeof globalThis.loadTx_ !== 'function') return;
-  const tx = globalThis.loadTx_(), now = Date.now();
-  const noReplyMin = Number(PropertiesService.getScriptProperties().getProperty('TX_NOREPLY_MIN')) || 10;
+  const tx = globalThis.loadTx_();
   const byRow = {};
   Object.values(store.rides).forEach(r => { const n = parseInt(r.f.row, 10); if (n) (byRow[n] = byRow[n] || []).push(r); });
   Object.values(tx.rides || {}).forEach(rec => {
-    const st = textStatus(rec, now, noReplyMin);
-    if (!st) return;
+    const t = confirmTime(rec);
+    if (!t) return;
     const r = (byRow[rec.row] || []).find(x => String(x.f.phone || '').replace(/\D/g, '').slice(-10) === rec.phone10);
-    if (r) gas.setField(r.id, 'txs', st);
+    if (r && !SWP.same('txs', r.f.txs, t)) gas.setField(r.id, 'txs', t);
   });
 }
 
 /* ---------------- running the texting code ---------------- */
-function run(fn) { // every entry into the .gs code: then the Text statuses, ship its sheet edits and save
-  try { return fn(); } finally { try { try { syncTextStatus(); } catch (e) { log('text status:', e.message); } shipChanges(); } finally { gas.flush(); } }
+function run(fn) { // every entry into the .gs code: then the Confirmed times, ship its sheet edits and save
+  try { return fn(); } finally { try { try { syncTextStatus(); } catch (e) { log('confirmed column:', e.message); } shipChanges(); } finally { gas.flush(); } }
 }
 const NOT_CALLABLE = new Set(['doGet', 'doPost', 'setupTexts']);
 function rpc(name, args) {

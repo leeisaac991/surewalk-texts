@@ -63,7 +63,7 @@
     ['id', /^id$/], ['ts', /^(form submitted|timestamp|completion time)/], ['date', /^date$/], ['stime', /^(submitted time|time submitted)$/], ['disp', /^dispatch/], ['call', /^call time/], ['arr', /^arrival/],
     ['last', /^last name/], ['first', /^first name/], ['phone', /^phone/], ['pu', /^pick ?-?up/], ['do', /^drop ?-?off/],
     ['ada', /disabilit|^ada\b/], ['loc', /^location$/], ['van', /^(van|vehicle)/], ['drv', /^driver$/], ['nav', /^navigator$/],
-    ['rsn', /^reason/], ['rsn', /cancel/], ['eid', /^(ut )?eid/], ['notes', /^notes?$/], ['txs', /^text( status)?$/],
+    ['rsn', /^reason/], ['rsn', /cancel/], ['eid', /^(ut )?eid/], ['notes', /^notes?$/], ['txs', /^(confirmed|text( status)?)$/],
     // the rider's email ("Email Address:"; the plain "Email" column is the Forms account) and the form's three agreements
     ['email', /^email address/], ['agree', /^i have read the updated rules/], ['verified', /^all pick ?-?up locations/], ['food', /food establishment/],
   ];
@@ -156,6 +156,7 @@
         RIDE_FIELDS.forEach(k => { f[k] = get(k); });
         f.call = col.call ? hm(v[col.call - 1], t[col.call - 1]) : '';
         f.arr = col.arr ? hm(v[col.arr - 1], t[col.arr - 1]) : '';
+        f.txs = col.txs ? hm(v[col.txs - 1], t[col.txs - 1]) : ''; // "Confirmed": a time, like Call Time
         if (f.rsn === '0') f.rsn = '';
         if (/^#+$/.test(f.phone)) f.phone = String(v[col.phone - 1]);
         f.bg = rowColor(cells, rideCols);
@@ -244,7 +245,7 @@
     if (!c) return;
     const rg = ws.getRangeByIndexes(row - 1, c - 1, 1, 1);
     if (val === '' || val == null) { rg.clear(Excel.ClearApplyTo.contents); return; }
-    if ((k === 'call' || k === 'arr') && /^\d{1,2}:\d{2}$/.test(val)) { rg.values = [[hmToSerial(val)]]; rg.numberFormat = [['h:mm']]; return; }
+    if ((k === 'call' || k === 'arr' || k === 'txs') && /^\d{1,2}:\d{2}$/.test(val)) { rg.values = [[hmToSerial(val)]]; rg.numberFormat = [['h:mm']]; return; }
     rg.values = [[String(val)]];
   }
   function paintRow(ws, row, color) {
@@ -484,7 +485,7 @@
       const ch = {};
       SWP.FIELDS.forEach(f => {
         if (f === 'ts' || r.f[f] === undefined || SWP.same(f, r.f[f], k.f[f])) return;
-        if (f === 'txs' && !X.col.txs) return; // no "Text" column in this tab: the texting computer's status stays in the chat
+        if (f === 'txs' && !X.col.txs) return; // no "Confirmed" column in this tab: the time stays in the chat
         ch[f] = r.f[f];
       });
       if (!Object.keys(ch).length) return;

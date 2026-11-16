@@ -17,8 +17,7 @@
  *   f (fields, all strings): ts (Austin wall clock "YYYY-MM-DD HH:MM:SS"), row (sheet row), first, last, phone,
  *      pu (pick-up), do (drop-off), ada, disp (Dispatcher), call (Call Time H:MM), arr (Arrival H:MM), loc, van, drv,
  *      nav, rsn (cancel reason), bg (the row's fill color, e.g. #000000 cancelled, #ff0000 duplicate),
- *      txs (the sheet's "Text" column: the texting computer's status for the rider — "Texted 21:38", "Confirmed 21:40",
- *      "Replied 21:41", "No reply 21:38", "Opted out", "Cancelled by text"; never the text itself).
+ *      txs (the sheet's "Confirmed" column: H:MM when the rider said YES to the texting computer's text; never the text).
  *
  * Never put text-message content in here: only what the sheet itself holds.
  */
@@ -52,7 +51,7 @@
     if ('ada' in f) bits.push(`ADA ${f.ada || '—'}`);
     if ('drv' in f && f.drv) bits.push(`crew ${f.drv}${f.nav ? '/' + f.nav : ''}`);
     if ('arr' in f && f.arr) bits.push(`arrived ${f.arr}`);
-    if ('txs' in f && f.txs) bits.push(`text: ${f.txs}`);
+    if ('txs' in f && f.txs) bits.push(`confirmed ${f.txs}`);
     if (!bits.length) bits.push('updated');
     return `${ev.src === 's' ? '💬' : '✏️'} ${who(f, known)}: ${bits.join(', ')}`;
   }
@@ -119,7 +118,7 @@
     const n = v => {
       let s = String(v == null ? '' : v).trim();
       if (k === 'bg') s = s.toLowerCase() || '#ffffff';
-      if (k === 'call' || k === 'arr') s = s.replace(/^0(\d:)/, '$1');
+      if (k === 'call' || k === 'arr' || k === 'txs') s = s.replace(/^0(\d:)/, '$1');
       if (k === 'rsn' && s === '0') s = '';
       return s;
     };

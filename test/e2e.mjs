@@ -53,10 +53,10 @@ const COLS_NOV = ['Id', 'Date', 'Submitted Time', 'Dispatcher', 'Call Time', 'Ar
 const HEADER = (LAYOUT === 'old' ? COLS_OLD : COLS_NOV).concat(['Phone number. Only submit using numeric digits', 'Pick-up Location (UT PROPERTY ONLY) Non UT property will be cancelled automatically:', 'Drop-off Location Building or Apartment name:',
   'Do you require Americans with Disabilities Act assistance?', 'Location', 'Vehicle Type', 'Driver', 'Navigator', 'I have read the updated rules and guidelines for Sure Walk and understand the current situation that the program is experiencing.',
   'All pick up locations are only permitted on campus. Off campus locations will NOT be considered and declined.',
-  'Rides requested to or from any food establishment (e.g. Insomnia Cookies, Chick-Fil-A, Canes, and food trucks) will NOT be considered and declined.', 'Email Address:', 'Reason for Cancellation', 'Notes'].concat(LAYOUT === 'old' ? [] : ['Text'])); // old layout: no "Text" column
+  'Rides requested to or from any food establishment (e.g. Insomnia Cookies, Chick-Fil-A, Canes, and food trucks) will NOT be considered and declined.', 'Email Address:', 'Reason for Cancellation', 'Notes'].concat(LAYOUT === 'old' ? [] : ['Confirmed'])); // old layout: no "Confirmed" column
 const idx = re => HEADER.findIndex(h => re.test(h));
 const L = n => String.fromCharCode(65 + n);
-const C = { call: L(idx(/^Call Time/)), disp: L(idx(/^Dispatcher/)), rsn: L(idx(/^Reason/)), pu: L(idx(/^Pick-up/)), do: L(idx(/^Drop-off/)), first: L(idx(/^First Name/)), arr: L(idx(/^Arrival Time/)), txs: LAYOUT === 'old' ? '' : L(idx(/^Text$/)) };
+const C = { call: L(idx(/^Call Time/)), disp: L(idx(/^Dispatcher/)), rsn: L(idx(/^Reason/)), pu: L(idx(/^Pick-up/)), do: L(idx(/^Drop-off/)), first: L(idx(/^First Name/)), arr: L(idx(/^Arrival Time/)), txs: LAYOUT === 'old' ? '' : L(idx(/^Confirmed$/)) };
 const wallParts = minAgo => { const d = new Date(NOW - 6 * 3600e3 - minAgo * 60e3); return [`${d.getUTCMonth() + 1}/${d.getUTCDate()}/${d.getUTCFullYear()}`, `${d.getUTCHours()}:${String(d.getUTCMinutes()).padStart(2, '0')}`]; };
 const wall = minAgo => wallParts(minAgo).join(' ');
 const ride = (id, minAgo, first, last, phone, pu, dropoff, extra = {}) => {
@@ -150,12 +150,12 @@ const first = await until(async () => { const r = await bridge(); return r.outbo
 ok(first && !first.some(o => o.to.endsWith('5550103')), 'no text to the cancelled ride');
 await bridge([], (first || []).map(o => ({ outId: o.outId, status: 'sent' })));
 await until(() => B.js(`__xl.text(2,'${C.call}') === '22:00' && __xl.text(3,'${C.call}') === '22:00'`), 'Call Time 22:00 written into F2 and F3 by the panel');
-if (C.txs) await until(() => B.js(`/^Texted 22:00$|^No reply 22:00$/.test(__xl.text(2,'${C.txs}'))`), '"Text" column: Texted 22:00 for Ava (the texting status, for dispatchers)');
+if (C.txs) ok(await B.js(`__xl.text(2,'${C.txs}') === ''`), '"Confirmed" column stays blank while Ava has only been texted');
 
 console.log('rider texts CANCEL -> row cancelled in the sheet');
 let res = await bridge([{ id: 'in1', from: '+15125550102', text: 'cancel', ts: NOW + 5000 }]);
 await until(() => B.js(`__xl.bg(3,'A') === '#000000' && __xl.text(3,'${C.rsn}') !== '' && __xl.text(3,'${C.call}') === ''`), 'row 3 black, reason in X, Call Time cleared');
-if (C.txs) await until(() => B.js(`__xl.text(3,'${C.txs}') === 'Cancelled by text'`), '"Text" column: Cancelled by text for Ben');
+if (C.txs) ok(await B.js(`__xl.text(3,'${C.txs}') === ''`), '"Confirmed" column blank for Ben (cancelled by text)');
 ok(/cancel/i.test(JSON.stringify(res.outbox || [])) || (res.outbox || []).length > 0, 'rider gets the cancelled text');
 
 console.log('panel actions -> texting server');
@@ -377,7 +377,7 @@ await B.js(`__xl.type(${lrow}, '${C.arr}', '22:12')`);
 await until(async () => { await bridge(); const r = lia(); return r && r[ec('Outcome')] === 'arrived'; }, 'arrival fills in the real wait');
 const lr = lia() || [];
 ok(lr[ec('Arrival')] === '22:12' && lr[ec('Wait min')] === 12 && Math.abs(lr[ec('Error min')] - (12 - lr[ec('Predicted min')])) < 0.11, `wait 12 min, error = wait − predicted (${lr[ec('Error min')]})`);
-if (C.txs) await until(() => B.js(`/^Confirmed \\d{1,2}:\\d{2}$/.test(__xl.text(${lrow},'${C.txs}'))`), '"Text" column: Confirmed after Lia\'s YES');
+if (C.txs) await until(() => B.js(`/^\\d{1,2}:\\d{2}$/.test(__xl.text(${lrow},'${C.txs}'))`), '"Confirmed" column: the time of Lia\'s YES');
 else ok((msgs.map(m => m.text).join('\n').match(/"txs"/g) || []).length < 40, 'no "Text" column: the status isn\'t bounced back and forth in the chat');
 ok(/^\d+–\d+ min$/.test(lr[ec('Quoted in text')] || ''), 'the range quoted in the text is logged: ' + lr[ec('Quoted in text')]);
 ok(!JSON.stringify(etaRows()).match(/Lia|Eta"|5550180|Stone|5550101/), 'no names or phone numbers in the ETA log');
