@@ -61,6 +61,9 @@
   .lc-next { font-size: 13px; margin-top: 10px; min-height: 18px; }
   .lc-btn { margin-top: auto; width: 100%; padding: 13px; border-radius: 12px; background: var(--accent); color: #fff; font-size: 17px; font-weight: 700; }
   .lc-err { color: var(--bad); font-size: 13px; }
+  .wchip { display: inline-block; font-size: 12.5px; font-weight: 600; padding: 3px 10px; border-radius: 99px; background: var(--bg); color: var(--muted); white-space: nowrap; }
+  .wchip.w-ok { background: var(--ok-soft); color: var(--ok); } .wchip.w-mid { background: var(--warn-soft); color: var(--warn); } .wchip.w-high { background: var(--bad-soft); color: var(--bad); }
+  #lcWait { margin-top: 6px; }
   .abar { display: flex; align-items: center; gap: 8px; width: 100%; height: 40px; padding: 0 14px; border: 0; border-top: 1px solid var(--line); background: var(--card); text-align: left; flex: none; }
   .abar:hover { background: var(--bg); }
 
@@ -120,7 +123,9 @@
   .mascs { display: flex; gap: 8px; flex-wrap: wrap; }
   .masc { width: 92px; padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); display: grid; justify-items: center; gap: 4px; font-size: 12px; font-weight: 600; }
   .masc.on { border-color: var(--accent); color: var(--accent); }
-  .masc svg { width: 46px; height: 46px; }
+  .masc svg { width: 46px; height: 46px; color: var(--text); }
+  .masc svg.wide { width: 72px; }
+  .masc.on svg { color: var(--accent); }
   @media (max-width: 520px) { .mm { flex-direction: column; } .mnav { width: auto; flex-direction: row; overflow-x: auto; } .mnav button { white-space: nowrap; } .modal { height: calc(100vh - 24px); } }
 
   /* ---------- Calling (3b): its own window, or over the side panel in Script Lab ---------- */
@@ -189,7 +194,10 @@
   .btn.badf { background: var(--bad); border-color: var(--bad); color: #fff; }
   .btn.warnf { background: var(--warn); border-color: var(--warn); color: #fff; }
   .nobody { display: grid; justify-items: center; gap: 8px; padding: 60px 20px; text-align: center; }
-  .nobody svg { width: 150px; height: 150px; }
+  .nobody svg { width: 150px; height: 150px; color: #1d2a4f; }
+  .nobody svg.wide { width: 220px; height: 112px; color: var(--accent); }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .nobody svg.mascot:not(.wide) { color: #9aa6cf; } }
+  :root[data-theme="dark"] .nobody svg.mascot:not(.wide) { color: #9aa6cf; }
   .nobody h3 { font-size: 20px; margin: 0; }
   @media (max-width: 760px) { /* narrow (the side panel in Script Lab): the list, or one ride */
     .cbody { grid-template-columns: 1fr; } .call.has-sel .clist { display: none; } .call:not(.has-sel) .cdet { display: none; }
@@ -228,6 +236,7 @@
     <span class="lc-n" id="lcN">–</span>
     <span class="lc-sub">to call</span>
     <span class="lc-next" id="lcNext"></span>
+    <span id="lcWait"></span>
     <span class="lc-err" id="lcErr" hidden></span>
     <span class="lc-btn">Open Calling ↗</span>
   </button>
@@ -265,7 +274,7 @@
       <div class="mbody">
         <section data-sc="you">
           <label class="l">Your name<input class="fld" id="setName" placeholder="F. Lastname" autocomplete="off"></label>
-          <div class="mrow" style="margin-top:14px"><span>Put my name in Dispatcher when I mark called</span><button class="sw" id="setDispName" role="switch" aria-checked="true" aria-label="Put my name in Dispatcher when I mark called"></button></div>
+          <div class="small muted" style="margin-top:8px">Goes in the sheet's Dispatcher column when you mark a ride called.</div>
         </section>
         <section data-sc="look" hidden>
           <div class="mrow"><span>Theme</span><div class="seg" id="themeSeg"><button data-th="auto">Auto</button><button data-th="light">Light</button><button data-th="dark">Dark</button></div></div>
@@ -285,7 +294,7 @@
 <!-- ======================= Calling (3b) ======================= -->
 <div class="call" id="calling" hidden>
   <div class="ct">
-    <h1>Calling</h1><span class="muted hide-n" id="cCount"></span><span class="sp"></span>
+    <h1>Calling</h1><span class="muted hide-n" id="cCount"></span><span id="cWait"></span><span class="sp"></span>
     <input class="fld q" id="q" type="search" placeholder="Search name, phone, place" aria-label="Search name, phone, place">
     <button class="btn" id="addBtn" title="Add a ride by hand (not through the form)">＋ Ride</button>
     <button class="ib" id="cSet" aria-label="Settings" title="Settings">⚙</button>
