@@ -40,10 +40,10 @@
     post('/api/status').then(function (s) {
       var dot = !s.configured ? '#9e9e9e' : s.lastError ? '#d32f2f' : !s.ready ? '#f57c00' : '#2e7d32';
       var txt = !s.configured ? 'GroupMe sync: set up' : s.lastError ? 'GroupMe: ' + s.lastError : !s.ready ? 'GroupMe: reading chat…'
-        : 'GroupMe · ' + s.rides + ' rides' + (s.waiting ? ' · ' + s.waiting + ' to send' : '');
+        : 'GroupMe';
       b.innerHTML = '<span style="width:8px;height:8px;border-radius:50%;background:' + dot + '"></span>';
       b.appendChild(document.createTextNode(txt));
-      b.title = 'Sync chat: ' + (s.group || 'not set') + '\nLast from Excel: ' + ago(s.lastExcelAt) + '\nChecked: ' + ago(s.lastPollAt) + '\nClick for GroupMe sync settings';
+      b.title = 'Sync chat: ' + (s.group || 'not set') + '\n' + s.rides + ' rides tonight' + (s.waiting ? ' · ' + s.waiting + ' to post' : '') + '\nLast from Excel: ' + ago(s.lastExcelAt) + '\nChecked: ' + ago(s.lastPollAt) + '\nClick for GroupMe sync settings';
     }).catch(function () { b.textContent = 'Texting server offline'; });
   }
 

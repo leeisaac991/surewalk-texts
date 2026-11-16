@@ -350,6 +350,28 @@ ok(ka.ok && krow && await B.js(`/^[0-9]+:[0-9][0-9]$/.test(__xl.text(${krow},'${
 await sleep(1500);
 ok(!((await bridge()).outbox || []).some(o => o.to.endsWith('5550171')), 'and it is not texted');
 
+console.log('⏱ ETA log: predicted vs. real wait');
+const lrow = (await B.js(`Math.max(...SWT.X.rides.map(r => r.row))`)) + 1;
+await B.js(`__xl.row(${lrow}, ${JSON.stringify(ride(30, 0, 'Lia', 'Eta', '5125550180', 'PCL', 'Kins'))})`);
+const etaRows = () => { try { return JSON.parse(fs.readFileSync(path.join(TMP, 'state', 'eta.json'), 'utf8')); } catch (e) { return []; } };
+const etaHead = () => etaRows()[0] || [], ec = n => etaHead().indexOf(n);
+const lia = () => etaRows().find(r => +r[1] === lrow);
+let liaText = null;
+const grabLia = async () => { const r = await bridge(); const o = (r.outbox || []).find(x => x.to.endsWith('5550180')); if (o && !liaText) { liaText = o; await bridge([], [{ outId: o.outId, status: 'sent' }]); } };
+await until(async () => { await grabLia(); return lia(); }, 'a new ride gets a row in the ETA log with the prediction');
+ok(lia() && lia()[ec('Predicted min')] !== '' && typeof lia()[ec('Ahead')] === 'number' && /–/.test(lia()[ec('Shown')]), 'row has ahead, predicted minutes and the range shown: ' + JSON.stringify(lia()));
+await until(async () => { await grabLia(); return liaText; }, 'Lia is texted');
+await bridge([{ id: 'eta1', from: '+15125550180', text: 'yes', ts: NOW + 200e3 }]);
+await B.js(`__xl.type(${lrow}, '${C.arr}', '22:12')`);
+await until(async () => { await bridge(); const r = lia(); return r && r[ec('Outcome')] === 'arrived'; }, 'arrival fills in the real wait');
+const lr = lia() || [];
+ok(lr[ec('Arrival')] === '22:12' && lr[ec('Wait min')] === 12 && Math.abs(lr[ec('Error min')] - (12 - lr[ec('Predicted min')])) < 0.11, `wait 12 min, error = wait − predicted (${lr[ec('Error min')]})`);
+ok(/^\d+–\d+ min$/.test(lr[ec('Quoted in text')] || ''), 'the range quoted in the text is logged: ' + lr[ec('Quoted in text')]);
+ok(!JSON.stringify(etaRows()).match(/Lia|Eta"|5550180|Stone|5550101/), 'no names or phone numbers in the ETA log');
+ok((fs.statSync(path.join(TMP, 'state', 'eta.json')).mode & 0o077) === 0, 'eta.json readable only by the user');
+ok((await rpc('getState')).etaUrl === '/eta.csv', 'Settings links the ETA log');
+ok((await (await fetch(`http://127.0.0.1:${SPORT}/eta.csv`)).text()).startsWith('Night,Row,Requested'), '/eta.csv downloads it');
+
 console.log('privacy');
 const all = evs();
 ok(!/Reply YES|SURE Walk got your ride|your ride is cancelled/i.test(all), 'no text-message content in the chat');
