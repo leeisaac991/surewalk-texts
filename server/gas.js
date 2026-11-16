@@ -73,7 +73,8 @@ function install(stateDir, store) {
   /* ---------- the message log (local file) ---------- */
   const logFile = path.join(stateDir, 'messages.jsonl');
   let logCount = null;
-  const logRows = () => { try { return fs.readFileSync(logFile, 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)); } catch (e) { return []; } };
+  // Only real log rows (they start with { d: time }): an older stand-in let the ETA log write into this file.
+  const logRows = () => { try { return fs.readFileSync(logFile, 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)).filter(r => r && r[0] && typeof r[0] === 'object' && 'd' in r[0]); } catch (e) { return []; } };
   const countLog = () => (logCount == null ? (logCount = logRows().length) : logCount);
   const chain = o => new Proxy(o, { get: (t, k) => (k in t ? t[k] : () => t.self || t) }); // setFontWeight & co. do nothing
   const logSheet = chain({
