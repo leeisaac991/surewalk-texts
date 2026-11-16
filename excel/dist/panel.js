@@ -295,7 +295,7 @@
 
   const who = f => [f.first, f.last].filter(Boolean).join(' ') || 'row ' + f.row;
   const markCalled = r => {
-    const keys = ['call'], withName = set.dispName && set.name && !r.f.disp;
+    const keys = ['call'], withName = !!set.name && !r.f.disp; // your name (Settings › You) goes in Dispatcher
     if (withName) keys.push('disp');
     return act(r, 'Marked called ' + ampm(nowHM()), keys, false, ws => { writeField(ws, r.row, 'call', nowHM()); if (withName) writeField(ws, r.row, 'disp', set.name); });
   };
@@ -586,15 +586,27 @@
   const HOSTED = () => !!window.__SWT_HOSTED; // the SURE Walk Texts add-in (its own site): can open the Calling window
   const GROUP_COLORS = { A: '#ff9500', B: '#af52de', C: '#34a853', D: '#007aff', E: '#e8467c', F: '#00a3a3', G: '#8d6e63', H: '#5c6bc0' };
   const ACCENTS = { orange: ['Burnt orange', '#bf5700', '#ff8a3d'], blue: ['Blue', '#1565c0', '#64b5f6'], green: ['Green', '#2e7d32', '#66bb6a'], purple: ['Purple', '#6a1b9a', '#ce93d8'] };
-  const MASCOTS = {
-    m1: ['Mascot 1', '<svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="52" r="38" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="4"/><circle cx="38" cy="46" r="5" fill="var(--accent)"/><circle cx="62" cy="46" r="5" fill="var(--accent)"/><path d="M36 64q14 12 28 0" fill="none" stroke="var(--accent)" stroke-width="4" stroke-linecap="round"/></svg>'],
-    m2: ['Mascot 2', '<svg viewBox="0 0 100 100" aria-hidden="true"><path d="M20 70h60l-6-22H26z" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="4" stroke-linejoin="round"/><path d="M30 48l6-14h28l6 14" fill="none" stroke="var(--accent)" stroke-width="4" stroke-linejoin="round"/><circle cx="32" cy="72" r="7" fill="var(--accent)"/><circle cx="68" cy="72" r="7" fill="var(--accent)"/></svg>'],
-    none: ['None', '<svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="34" fill="none" stroke="var(--muted)" stroke-width="4" stroke-dasharray="8 8"/></svg>'],
-  };
+  // The dispatch panel's mascots (same drawings, drawn in currentColor): 밤 (BAM) and Bevo.
+  const CAT_SVG = `<svg class="mascot" viewBox="0 0 800 800" aria-hidden="true">
+    <g fill="none" stroke="currentColor" stroke-width="52" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M150 352 C122 318 132 280 132 240 L132 222 C132 178 168 152 204 164 C248 178 282 218 322 216
+               C362 210 438 210 478 216 C518 218 552 178 596 164 C632 152 668 178 668 222 L668 240 C668 280 678 318 650 352"/>
+      <path d="M150 352 C116 392 112 470 135 525 C165 595 280 655 400 660 C520 655 635 595 665 525 C688 470 684 392 650 352"/>
+      <path d="M190 332 L160 358 M610 332 L640 358"/>
+      <path d="M180 474 L68 514 M206 560 L120 600 M620 474 L732 514 M594 560 L680 600"/>
+    </g>
+    <g fill="currentColor">
+      <ellipse cx="300" cy="452" rx="40" ry="52"/><ellipse cx="500" cy="452" rx="40" ry="52"/>
+      <ellipse cx="400" cy="530" rx="52" ry="34"/>
+    </g></svg>`;
+  const BEVO_SVG = `<svg class="mascot wide" viewBox="0 0 2508 1272" aria-hidden="true"><g transform="translate(0.000000,1272.000000) scale(0.100000,-0.100000)" fill="currentColor"><path d="M815 12614 c-82 -8 -179 -21 -215 -29 -36 -8 -90 -19 -120 -24 -166 -27 -250 -66 -328 -155 -61 -70 -85 -132 -86 -221 -1 -79 -1 -81 47 -152 94 -141 174 -193 261 -173 22 5 106 14 186 20 80 5 201 15 270 20 123 11 143 10 545 -20 77 -6 172 -17 210 -25 39 -7 115 -21 170 -30 134 -21 301 -61 400 -94 17 -5 95 -31 175 -56 140 -44 266 -91 380 -142 30 -14 69 -31 85 -38 130 -56 162 -70 176 -82 8 -7 20 -13 25 -13 5 0 23 -7 39 -16 17 -9 77 -40 135 -70 58 -30 112 -59 120 -64 8 -5 65 -37 125 -71 124 -69 161 -92 276 -166 45 -29 83 -53 85 -53 7 0 88 -54 99 -66 6 -6 33 -24 60 -39 28 -16 85 -54 127 -84 42 -31 114 -81 158 -111 45 -30 97 -66 115 -80 19 -14 58 -42 87 -63 60 -43 625 -465 669 -500 16 -12 65 -49 109 -82 45 -33 117 -87 160 -120 186 -142 506 -374 665 -484 180 -124 516 -345 570 -375 32 -17 43 -24 120 -72 28 -17 79 -46 115 -63 36 -18 72 -39 80 -45 8 -7 29 -20 45 -28 17 -8 71 -36 122 -61 50 -26 102 -51 115 -57 13 -5 30 -14 38 -19 25 -16 170 -81 250 -113 41 -16 93 -38 116 -49 22 -10 47 -19 55 -19 8 0 20 -5 26 -11 6 -6 26 -15 44 -19 19 -5 72 -22 119 -38 67 -23 86 -33 88 -49 5 -36 -93 -119 -267 -222 -93 -56 -173 -86 -401 -151 -41 -11 -88 -25 -105 -31 -16 -6 -48 -15 -70 -20 -55 -13 -150 -52 -209 -85 -129 -72 -226 -226 -226 -358 0 -49 41 -135 96 -201 39 -48 163 -147 219 -175 16 -9 53 -28 80 -42 28 -15 77 -39 110 -53 33 -14 67 -30 76 -35 8 -4 49 -21 90 -38 73 -29 231 -101 279 -127 14 -7 43 -16 65 -20 22 -4 48 -12 59 -17 10 -6 71 -19 135 -29 209 -34 490 -21 716 33 96 23 431 130 490 157 11 5 40 18 65 29 25 11 79 35 120 54 41 19 109 50 150 69 41 18 90 44 109 56 18 12 48 25 67 29 43 8 117 -20 148 -57 22 -26 23 -35 28 -251 3 -130 10 -235 17 -252 6 -15 16 -59 21 -97 14 -99 72 -330 116 -464 32 -98 121 -330 154 -400 10 -22 39 -83 63 -135 25 -52 61 -131 81 -175 20 -44 41 -87 46 -95 5 -8 52 -100 105 -205 53 -104 101 -197 106 -205 22 -37 220 -455 259 -545 23 -55 51 -118 61 -141 10 -23 19 -48 19 -57 0 -9 4 -18 9 -21 5 -3 32 -79 60 -168 29 -90 56 -176 62 -193 6 -16 20 -66 30 -110 54 -220 72 -370 66 -540 -5 -148 -30 -304 -61 -390 -9 -22 -15 -48 -16 -58 0 -11 -6 -31 -14 -45 -8 -15 -35 -94 -61 -177 -44 -138 -65 -200 -101 -295 -7 -19 -16 -51 -19 -70 -4 -19 -13 -55 -21 -80 -22 -73 -44 -210 -44 -276 0 -57 27 -147 48 -156 12 -5 50 -64 82 -126 36 -70 75 -211 96 -342 25 -157 41 -204 97 -287 84 -124 315 -349 472 -459 45 -32 182 -104 197 -104 7 0 42 -9 78 -19 205 -62 332 -75 770 -75 354 0 486 7 595 36 22 6 63 14 90 18 58 10 132 33 191 61 23 10 44 19 47 19 6 0 42 22 131 82 135 91 362 313 442 432 61 90 80 141 98 269 8 58 19 114 25 125 6 12 11 29 11 40 0 63 121 332 149 332 4 0 17 20 29 45 25 51 29 138 11 215 -6 25 -17 77 -24 115 -7 39 -18 84 -24 100 -5 17 -31 98 -57 180 -25 83 -52 164 -60 180 -7 17 -17 46 -23 65 -5 19 -22 68 -36 109 -57 158 -84 292 -110 536 -7 68 15 269 47 420 11 55 24 118 27 140 4 22 12 49 18 60 6 11 14 40 18 65 4 25 14 54 21 65 8 11 14 26 14 35 0 17 82 253 112 320 11 25 26 59 33 75 7 17 24 55 38 85 14 30 35 78 47 105 39 87 394 796 401 801 4 2 10 16 14 31 3 16 12 35 19 43 7 8 25 44 41 80 15 36 46 103 68 150 22 47 48 105 59 130 11 25 24 53 29 62 5 10 16 37 25 60 31 86 66 184 80 228 8 24 19 49 24 54 6 6 10 17 10 25 0 9 8 45 19 81 40 135 51 178 71 295 36 204 39 233 46 424 5 140 10 193 22 213 15 27 96 68 133 68 19 0 80 -27 149 -65 24 -14 101 -51 170 -81 69 -31 129 -60 135 -65 5 -5 15 -9 23 -9 8 0 33 -9 56 -19 36 -17 126 -50 321 -116 28 -9 70 -20 95 -25 25 -4 68 -15 95 -23 202 -60 682 -61 823 -1 18 8 50 17 72 20 22 4 45 13 51 20 6 8 18 14 26 14 8 0 52 18 96 39 136 65 195 91 206 91 5 0 22 7 38 15 15 8 77 37 136 65 210 97 362 222 427 350 37 72 39 126 8 207 -55 146 -163 244 -333 303 -49 17 -103 35 -120 41 -16 6 -55 17 -85 25 -161 39 -273 77 -376 125 -139 65 -354 220 -354 254 0 19 21 29 132 66 51 17 111 39 134 50 22 10 47 19 55 19 8 0 23 6 34 13 11 7 58 28 104 46 46 18 91 36 100 41 9 4 115 57 236 117 121 59 235 118 253 130 18 12 52 31 75 43 52 27 85 46 277 162 60 37 521 345 615 413 256 182 266 189 345 250 35 27 87 65 115 84 27 19 93 67 145 108 52 40 104 79 115 88 97 72 143 106 160 120 11 8 83 62 160 120 77 57 174 129 215 161 104 78 258 192 300 220 19 14 73 51 120 85 191 135 458 314 576 384 36 22 80 49 98 60 17 12 101 61 186 110 244 140 396 214 770 377 83 37 414 148 439 148 9 0 26 7 37 15 10 8 29 15 41 15 13 0 49 8 80 19 32 10 126 31 208 45 83 15 184 34 225 42 41 7 134 18 205 24 72 5 194 14 273 20 101 8 183 8 285 0 78 -6 203 -15 277 -20 74 -6 154 -15 177 -21 88 -24 187 51 274 205 36 64 40 77 36 128 -5 85 -55 175 -140 254 -48 44 -82 67 -111 75 -22 5 -61 17 -86 24 -25 8 -67 17 -95 20 -27 3 -79 12 -115 20 -267 58 -953 58 -1300 0 -47 -8 -112 -17 -145 -20 -33 -3 -87 -12 -120 -20 -33 -7 -87 -18 -120 -24 -33 -6 -125 -24 -205 -41 -80 -17 -166 -35 -192 -40 -26 -5 -55 -13 -65 -18 -10 -5 -38 -13 -63 -17 -25 -4 -54 -12 -64 -17 -11 -6 -45 -16 -75 -23 -31 -7 -69 -17 -86 -23 -16 -6 -70 -23 -120 -38 -49 -15 -114 -35 -142 -46 -139 -50 -170 -62 -198 -73 -16 -7 -64 -25 -105 -40 -41 -14 -93 -35 -116 -46 -23 -10 -48 -19 -56 -19 -9 0 -21 -6 -27 -14 -7 -8 -24 -17 -39 -21 -25 -6 -58 -19 -157 -65 -22 -10 -62 -28 -90 -40 -27 -11 -57 -25 -65 -31 -8 -5 -26 -14 -40 -20 -13 -6 -79 -36 -145 -68 -66 -32 -127 -61 -135 -65 -8 -4 -60 -31 -115 -62 -55 -30 -122 -66 -150 -80 -27 -14 -68 -35 -90 -48 -22 -12 -71 -40 -110 -61 -38 -21 -88 -49 -110 -62 -22 -12 -53 -29 -70 -38 -16 -9 -48 -27 -70 -40 -22 -13 -66 -38 -98 -55 -32 -16 -70 -39 -85 -49 -43 -29 -228 -141 -235 -141 -3 0 -32 -17 -64 -37 -70 -45 -73 -47 -188 -115 -49 -29 -115 -68 -145 -88 -66 -42 -78 -49 -155 -95 -33 -19 -136 -82 -230 -140 -93 -57 -213 -129 -265 -160 -114 -67 -121 -71 -187 -113 -29 -18 -77 -46 -105 -61 -29 -15 -75 -42 -103 -59 -27 -18 -61 -37 -75 -44 -14 -7 -49 -27 -79 -46 -30 -18 -63 -38 -75 -43 -12 -5 -39 -20 -61 -33 -22 -13 -71 -41 -110 -61 -38 -21 -74 -41 -80 -45 -5 -4 -54 -30 -108 -58 -54 -28 -104 -55 -110 -60 -7 -5 -70 -30 -142 -56 -71 -26 -144 -54 -161 -61 -18 -8 -49 -17 -70 -21 -22 -4 -50 -12 -64 -19 -14 -6 -86 -24 -160 -39 -74 -15 -165 -34 -201 -42 -36 -8 -116 -19 -178 -24 -62 -6 -131 -15 -154 -20 -56 -13 -487 -13 -562 1 -33 5 -99 14 -148 19 -86 8 -133 18 -332 67 -119 29 -203 59 -326 117 -31 14 -59 26 -62 26 -4 0 -48 24 -99 54 -51 29 -114 62 -139 73 -65 29 -182 37 -326 23 l-123 -12 -44 26 c-58 34 -166 51 -241 37 -31 -6 -86 -26 -123 -45 -90 -47 -195 -70 -286 -62 -75 6 -205 27 -271 45 -87 22 -224 41 -303 41 -82 0 -214 -30 -228 -51 -8 -13 -42 -11 -72 6 -108 59 -324 58 -537 -1 -60 -17 -164 -33 -260 -41 -74 -6 -215 18 -245 41 -8 7 -42 25 -75 41 -53 26 -69 30 -152 29 -84 0 -98 -3 -154 -33 l-61 -32 -121 11 c-147 14 -277 5 -326 -21 -20 -10 -39 -19 -43 -19 -4 0 -26 -13 -50 -29 -37 -25 -200 -106 -293 -145 -80 -35 -149 -57 -240 -80 -198 -48 -246 -58 -337 -66 -51 -5 -117 -14 -147 -20 -82 -15 -467 -13 -596 4 -60 9 -146 20 -190 25 -202 26 -465 87 -595 136 -19 8 -46 17 -60 20 -32 9 -232 86 -245 95 -5 4 -59 33 -120 65 -207 109 -240 127 -256 141 -8 8 -19 14 -22 14 -4 0 -64 33 -133 73 -135 77 -171 98 -249 142 -27 15 -72 42 -100 59 -57 37 -82 52 -215 130 -52 31 -171 103 -265 161 -93 57 -210 128 -258 157 -49 29 -122 73 -163 98 -40 25 -156 94 -256 154 -101 60 -205 123 -233 141 -27 17 -111 67 -185 109 -74 42 -142 81 -150 86 -8 5 -55 31 -105 59 -49 27 -110 61 -135 75 -25 14 -58 32 -75 41 -16 9 -84 44 -150 79 -66 35 -185 96 -265 136 -80 39 -152 76 -160 81 -8 5 -22 12 -30 16 -8 3 -58 26 -110 50 -52 25 -117 54 -145 64 -27 11 -68 28 -90 39 -22 10 -62 29 -90 40 -27 12 -63 28 -80 35 -16 8 -88 35 -160 60 -71 26 -138 51 -148 56 -20 11 -243 83 -382 123 -49 15 -103 31 -120 37 -16 6 -48 15 -70 20 -22 5 -62 15 -90 23 -93 26 -315 74 -475 101 -41 7 -91 18 -110 23 -19 6 -66 13 -105 17 -38 3 -104 12 -145 20 -210 39 -816 55 -1095 29z"/></g></svg>`;
+  const MASCOTS = { bam: ['밤', CAT_SVG], bevo: ['Bevo', BEVO_SVG], none: ['None', '<svg class="mascot" viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="34" fill="none" stroke="var(--muted)" stroke-width="4" stroke-dasharray="8 8"/></svg>'] };
+
   const REASONS = [['Rider cancelled', 'Chose Alternative Way Home'], ['No answer', 'Not Answering'], ['Off campus', 'Not Within Pickup Drop-off Parameters'], ['Other', 'Other']];
   const BM_COPY = "javascript:(()=>{if(!/groupme\\.com$/.test(location.hostname)){alert('Open web.groupme.com first, then click this bookmark.');return}let t=localStorage.getItem('access_token');if(!t){alert('No token found. Log in to GroupMe, then try again.');return}t=t.replace(/^\"|\"$/g,'');navigator.clipboard.writeText(t).then(()=>alert('GroupMe token copied. Paste it in the SURE Walk panel.'),()=>prompt('Copy your GroupMe token:',t))})()";
 
-  set = Object.assign({ theme: 'auto', accent: 'orange', mascot: 'm1' }, set);
+  set = Object.assign({ theme: 'auto', accent: 'orange', mascot: 'bam' }, set);
+  if (set.mascot === 'm1') set.mascot = 'bam'; else if (set.mascot === 'm2') set.mascot = 'bevo'; // the placeholders before
   const who2 = f => f.first || who(f);
   const digits10 = s => String(s || '').replace(/\D/g, '').slice(-10);
   const fmtPhone = s => { const d = digits10(s); return d.length === 10 ? `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}` : String(s || ''); };
@@ -703,6 +715,30 @@
     pushSnap(true);
   }
 
+  /* ---------- the current wait, like the dispatch panel: Arrival − Call of tonight's last 5 rides with an arrival ---------- */
+  function waitMin(call, arr) {
+    const p = s => { const m = /^(\d{1,2}):(\d{2})$/.exec(String(s || '').trim()); return m ? +m[1] * 60 + +m[2] : null; };
+    const c = p(call), a = p(arr);
+    if (c == null || a == null) return null;
+    const w = (a - c + 1440) % 1440;
+    return w <= 120 ? w : null;
+  }
+  function waitNow() {
+    if (!X) return null;
+    const ws = X.tonight.map(r => ({ row: r.row, w: waitMin(r.f.call, r.f.arr) })).filter(x => x.w != null).sort((a, b) => b.row - a.row);
+    const avg = l => (l.length ? l.reduce((s, x) => s + x.w, 0) / l.length : null);
+    const recent = ws.slice(0, 5), before = ws.slice(5, 10);
+    return { avg: avg(recent), prev: before.length >= 3 ? avg(before) : null, n: recent.length };
+  }
+  function waitChip() {
+    const w = waitNow();
+    if (!w || w.avg == null) return '<span class="wchip" title="No arrivals recorded tonight yet">⏱ Wait —</span>';
+    const m = Math.round(w.avg), d = w.prev == null ? 0 : w.avg - w.prev;
+    const cls = m < 8 ? 'w-ok' : m <= 15 ? 'w-mid' : 'w-high'; // ~5 green, ~10 amber, 15+ red (as in the dispatch panel)
+    const tip = `Average of the last ${w.n} rides with an arrival tonight: ${w.avg.toFixed(1)} min (Arrival − Call)` + (w.prev != null ? ` · the 5 before: ${w.prev.toFixed(1)} min` : '');
+    return `<span class="wchip ${cls}" title="${esc(tip)}">⏱ ~${m} min wait${Math.abs(d) >= 1 ? (d > 0 ? ' ↑' : ' ↓') : ''}</span>`;
+  }
+
   /* ---------- 3a: the launcher ---------- */
   function renderSync() {
     const dot = $('syncDot'), txt = $('syncTxt');
@@ -722,6 +758,7 @@
     const next = news.slice().sort((a, b) => (a.f.ts < b.f.ts ? -1 : 1))[0];
     $('lcNext').innerHTML = !X ? '' : next ? `Next: <b>${esc(who(next.f))}</b> · since ${esc(timeOf(next))}` : '<span style="color:var(--ok)">Everyone\'s been called.</span>';
     $('lcErr').hidden = !loadErr; $('lcErr').textContent = loadErr;
+    $('lcWait').innerHTML = X ? waitChip() : '';
   }
   $('openCalling').addEventListener('click', openCalling);
   $('autoBar').addEventListener('click', () => showAuto(true));
@@ -842,7 +879,6 @@
   function renderSettings() {
     document.querySelectorAll('.mnav button').forEach(b => b.classList.toggle('on', b.dataset.sc === setSec));
     document.querySelectorAll('.mbody section').forEach(x => { x.hidden = x.dataset.sc !== setSec; });
-    $('setDispName').setAttribute('aria-checked', String(!!set.dispName));
     document.querySelectorAll('#themeSeg button').forEach(b => b.classList.toggle('on', b.dataset.th === (set.theme || 'auto')));
     $('accRow').innerHTML = Object.keys(ACCENTS).map(k => `<button class="acc ${set.accent === k ? 'on' : ''}" data-acc="${k}" style="background:${ACCENTS[k][1]}" title="${ACCENTS[k][0]}" aria-label="${ACCENTS[k][0]}"></button>`).join('');
     $('mascRow').innerHTML = Object.keys(MASCOTS).map(k => `<button class="masc ${set.mascot === k ? 'on' : ''}" data-masc="${k}">${MASCOTS[k][1]}${MASCOTS[k][0]}</button>`).join('');
@@ -851,7 +887,6 @@
   document.querySelectorAll('.mnav button').forEach(b => b.addEventListener('click', () => { setSec = b.dataset.sc; renderSettings(); }));
   $('setName').addEventListener('change', () => setChange({ name: $('setName').value.trim() }));
   $('setTab').addEventListener('change', () => setChange({ tab: $('setTab').value.trim() }));
-  $('setDispName').addEventListener('click', () => setChange({ dispName: !set.dispName }));
   $('themeSeg').addEventListener('click', e => { const b = e.target.closest('[data-th]'); if (b) setChange({ theme: b.dataset.th }); });
   $('accRow').addEventListener('click', e => { const b = e.target.closest('[data-acc]'); if (b) setChange({ accent: b.dataset.acc }); });
   $('mascRow').addEventListener('click', e => { const b = e.target.closest('[data-masc]'); if (b) setChange({ mascot: b.dataset.masc }); });
@@ -876,6 +911,7 @@
     const rides = visibleRides(), all = X ? X.tonight : [];
     const counts = { new: all.filter(isNew).length, called: all.filter(isCalled).length, all: all.length };
     $('cCount').textContent = `${counts.new} to call`;
+    $('cWait').innerHTML = waitChip();
     $('cPills').innerHTML = [['new', 'To call'], ['called', 'Called'], ['all', 'All']].map(([k, l]) => `<button role="tab" data-f="${k}" class="${cl.filter === k ? 'on' : ''}" aria-selected="${cl.filter === k}">${l} ${counts[k]}</button>`).join('');
     if (cl.sel && !rides.some(r => r.id === cl.sel) && !(X && X.byId.get(cl.sel) && cl.filter === 'all')) { /* keep the selected ride shown even if it left the filter */ }
     $('list').innerHTML = rides.slice(0, 200).map(r => `<button class="crow ${r.id === cl.sel ? 'sel' : ''}" data-id="${esc(r.id)}">
@@ -887,7 +923,7 @@
   }
   function renderDetail(force) {
     const box = $('selRide'), r = cl.sel && X && X.byId.get(cl.sel);
-    const sig = JSON.stringify([r && r.f, cl.editing, cl.confirm, cl.reason, cl.picking, [...cl.picks], cl.copied, set.mascot, set.dispName, r && groupOf(r) && groupMembers(groupOf(r)).map(x => x.id)]);
+    const sig = JSON.stringify([r && r.f, cl.editing, cl.confirm, cl.reason, cl.picking, [...cl.picks], cl.copied, set.mascot, r && groupOf(r) && groupMembers(groupOf(r)).map(x => x.id)]);
     if (!force && sig === cl.sig) return;
     if (!force && box.contains(document.activeElement) && /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName)) return; // don't wipe what they're typing
     cl.sig = sig;
@@ -1079,7 +1115,7 @@
     if (!X) return { err: loadErr || 'Loading…' };
     return { name: X.name, col: { txs: !!X.col.txs, eid: !!X.col.eid, email: !!X.col.email }, err: loadErr,
       rides: X.tonight.map(r => ({ id: r.id, row: r.row, f: r.f, notes: r.notes || '' })),
-      set: { name: set.name, dispName: set.dispName, tab: set.tab, theme: set.theme, accent: set.accent, mascot: set.mascot } };
+      set: { name: set.name, tab: set.tab, theme: set.theme, accent: set.accent, mascot: set.mascot } };
   }
   function pushSnap(force) {
     if (!dlg) return;
