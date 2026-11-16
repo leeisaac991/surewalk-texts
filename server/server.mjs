@@ -216,9 +216,26 @@ async function loop() {
   } finally { loopBusy = false; }
 }
 
+/* ---------------- the "Confirmed" column: when each rider said YES to our text, for dispatchers ---------------- */
+// H:MM of the rider's YES (the texting code's confirmedAt). Only the time: never what anyone wrote.
+const hm = ms => { const d = new Date(ms); return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`; }; // TZ is Austin
+const confirmTime = rec => (rec && (rec.confirmedAt || rec.state === 'confirmed') ? hm(rec.confirmedAt || rec.lastInAt || Date.now()) : '');
+function syncTextStatus() {
+  if (typeof globalThis.loadTx_ !== 'function') return;
+  const tx = globalThis.loadTx_();
+  const byRow = {};
+  Object.values(store.rides).forEach(r => { const n = parseInt(r.f.row, 10); if (n) (byRow[n] = byRow[n] || []).push(r); });
+  Object.values(tx.rides || {}).forEach(rec => {
+    const t = confirmTime(rec);
+    if (!t) return;
+    const r = (byRow[rec.row] || []).find(x => String(x.f.phone || '').replace(/\D/g, '').slice(-10) === rec.phone10);
+    if (r && !SWP.same('txs', r.f.txs, t)) gas.setField(r.id, 'txs', t);
+  });
+}
+
 /* ---------------- running the texting code ---------------- */
-function run(fn) { // every entry into the .gs code: then ship its sheet edits and save
-  try { return fn(); } finally { try { shipChanges(); } finally { gas.flush(); } }
+function run(fn) { // every entry into the .gs code: then the Confirmed times, ship its sheet edits and save
+  try { return fn(); } finally { try { try { syncTextStatus(); } catch (e) { log('confirmed column:', e.message); } shipChanges(); } finally { gas.flush(); } }
 }
 const NOT_CALLABLE = new Set(['doGet', 'doPost', 'setupTexts']);
 function rpc(name, args) {

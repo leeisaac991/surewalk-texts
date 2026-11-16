@@ -16,7 +16,8 @@
  *   src: 's' = the texting server, 'x…' = an Excel panel.
  *   f (fields, all strings): ts (Austin wall clock "YYYY-MM-DD HH:MM:SS"), row (sheet row), first, last, phone,
  *      pu (pick-up), do (drop-off), ada, disp (Dispatcher), call (Call Time H:MM), arr (Arrival H:MM), loc, van, drv,
- *      nav, rsn (cancel reason), bg (the row's fill color, e.g. #000000 cancelled, #ff0000 duplicate).
+ *      nav, rsn (cancel reason), bg (the row's fill color, e.g. #000000 cancelled, #ff0000 duplicate),
+ *      txs (the sheet's "Confirmed" column: H:MM when the rider said YES to the texting computer's text; never the text).
  *
  * Never put text-message content in here: only what the sheet itself holds.
  */
@@ -24,7 +25,7 @@
   'use strict';
   const TAG = '‹sw1›';
   const MAX = 990; // GroupMe allows 1,000 characters per message
-  const FIELDS = ['ts', 'row', 'first', 'last', 'phone', 'pu', 'do', 'ada', 'disp', 'call', 'arr', 'loc', 'van', 'drv', 'nav', 'rsn', 'bg'];
+  const FIELDS = ['ts', 'row', 'first', 'last', 'phone', 'pu', 'do', 'ada', 'disp', 'call', 'arr', 'loc', 'van', 'drv', 'nav', 'rsn', 'bg', 'txs'];
   const ADD_FIELDS = ['ts', 'first', 'last', 'phone', 'eid', 'email', 'pu', 'do', 'ada', 'notes', 'call', 'disp'];
   const LIMIT = 160; // longest value we send for one field
 
@@ -50,6 +51,7 @@
     if ('ada' in f) bits.push(`ADA ${f.ada || '—'}`);
     if ('drv' in f && f.drv) bits.push(`crew ${f.drv}${f.nav ? '/' + f.nav : ''}`);
     if ('arr' in f && f.arr) bits.push(`arrived ${f.arr}`);
+    if ('txs' in f && f.txs) bits.push(`confirmed ${f.txs}`);
     if (!bits.length) bits.push('updated');
     return `${ev.src === 's' ? '💬' : '✏️'} ${who(f, known)}: ${bits.join(', ')}`;
   }
@@ -116,7 +118,7 @@
     const n = v => {
       let s = String(v == null ? '' : v).trim();
       if (k === 'bg') s = s.toLowerCase() || '#ffffff';
-      if (k === 'call' || k === 'arr') s = s.replace(/^0(\d:)/, '$1');
+      if (k === 'call' || k === 'arr' || k === 'txs') s = s.replace(/^0(\d:)/, '$1');
       if (k === 'rsn' && s === '0') s = '';
       return s;
     };

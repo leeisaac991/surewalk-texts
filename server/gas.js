@@ -217,6 +217,14 @@ function install(stateDir, store) {
       return [...by.values()].filter(c => c.was !== c.now);
     },
     clearCache: () => { C.removeAll(['rides', 'state_view']); },
+    /** A ride field the server itself sets (outside the .gs code), shipped to the Excel panel like a sheet edit. */
+    setField(id, k, value) {
+      const r = store.rides[id], now = value == null ? '' : String(value);
+      if (!r || String(r.f[k] || '') === now) return false;
+      changes.push({ id, k, was: String(r.f[k] || ''), now });
+      r.f[k] = now; store.ver++;
+      return true;
+    },
     flush() { if (propsDirty) { write(propsFile, JSON.stringify(P)); propsDirty = false; } },
     props: P,
     logRows,
