@@ -178,10 +178,11 @@ function requestAdd(b) {
   const t = k => String(b[k] == null ? '' : b[k]).replace(/^[=+@-]+/, '').replace(/[\r\n]+/g, ' ').trim().slice(0, 150); // never a formula
   let phone = digits(b.phone);
   if (phone.length === 11 && phone.charAt(0) === '1') phone = phone.slice(1);
-  const f = { first: t('first'), last: t('last'), phone, eid: t('eid'), pu: t('pu'), do: t('do'), ada: /^y/i.test(b.ada) ? 'Yes' : 'No', notes: t('notes') };
+  const f = { first: t('first'), last: t('last'), phone, eid: t('eid'), email: t('email'), pu: t('pu'), do: t('do'), ada: /^y/i.test(b.ada) ? 'Yes' : 'No', notes: t('notes') };
   const miss = [['first', 'first name'], ['pu', 'pick-up'], ['do', 'drop-off']].filter(([k]) => !f[k]).map(x => x[1]);
   if (miss.length) return { ok: false, error: 'Fill in the ' + miss.join(', ') + '.' };
   if (phone.length !== 10) return { ok: false, error: 'The phone number needs 10 digits.' };
+  if (f.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email)) return { ok: false, error: "That email doesn't look right." };
   if (!conf.groupId || !sync.ready) return { ok: false, error: "GroupMe sync isn't running, so the Excel panel can't get the ride. Set it up first (GroupMe pill)." };
   if (!b.force) {
     const same = tonight().find(r => isOpen(r) && digits(r.f.phone).slice(-10) === phone);

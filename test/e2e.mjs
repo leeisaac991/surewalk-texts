@@ -51,7 +51,9 @@ const LAYOUT = process.env.LAYOUT || 'nov';
 const COLS_OLD = ['Id', 'Start time', 'Form Submitted', 'Time Submitted', 'Dispatcher', 'Call Time', 'Arrival Time', 'Wait Time', 'UT EID', 'Last Name:', 'First Name:'];
 const COLS_NOV = ['Id', 'Date', 'Submitted Time', 'Dispatcher', 'Call Time', 'Arrival Time', 'Wait Time', 'UT EID (if a visitor, use N/A) :', 'Last Name:', 'First Name:'];
 const HEADER = (LAYOUT === 'old' ? COLS_OLD : COLS_NOV).concat(['Phone number. Only submit using numeric digits', 'Pick-up Location (UT PROPERTY ONLY) Non UT property will be cancelled automatically:', 'Drop-off Location Building or Apartment name:',
-  'Do you require Americans with Disabilities Act assistance?', 'Location', 'Vehicle Type', 'Driver', 'Navigator', 'Agree 1', 'Agree 2', 'Agree 3', 'Email Address:', 'Reason for Cancellation', 'Notes']);
+  'Do you require Americans with Disabilities Act assistance?', 'Location', 'Vehicle Type', 'Driver', 'Navigator', 'I have read the updated rules and guidelines for Sure Walk and understand the current situation that the program is experiencing.',
+  'All pick up locations are only permitted on campus. Off campus locations will NOT be considered and declined.',
+  'Rides requested to or from any food establishment (e.g. Insomnia Cookies, Chick-Fil-A, Canes, and food trucks) will NOT be considered and declined.', 'Email Address:', 'Reason for Cancellation', 'Notes']);
 const idx = re => HEADER.findIndex(h => re.test(h));
 const L = n => String.fromCharCode(65 + n);
 const C = { call: L(idx(/^Call Time/)), disp: L(idx(/^Dispatcher/)), rsn: L(idx(/^Reason/)), pu: L(idx(/^Pick-up/)), do: L(idx(/^Drop-off/)), first: L(idx(/^First Name/)), arr: L(idx(/^Arrival Time/)) };
@@ -299,10 +301,15 @@ await addRide({ aFirst: '', aPhone: '5125550160', aPu: 'PCL', aDo: 'Kins' });
 await sleep(300);
 ok(await B.js(`/first name/.test(document.getElementById('aMsg').textContent) && !document.getElementById('addCard').hidden`), 'missing first name: form stays open with a message');
 await B.js(`document.getElementById('aClose').click()`);
-await addRide({ aFirst: 'Gus', aLast: 'Hand', aPhone: '(512) 555-0160', aEid: 'gh123', aPu: 'Jester West', aDo: 'Dobie', aAda: 'Yes', aNotes: 'called the line' });
+await addRide({ aFirst: 'Gus', aLast: 'Hand', aPhone: '(512) 555-0160', aEid: 'gh123', aEmail: 'bad-email', aPu: 'Jester West', aDo: 'Dobie', aAda: 'Yes', aNotes: 'called the line' });
+await sleep(300);
+ok(await B.js(`/email/.test(document.getElementById('aMsg').textContent) && !document.getElementById('addCard').hidden`), 'bad email: form stays open with a message');
+await B.js(`document.getElementById('aEmail').value = 'gus.hand@utexas.edu'; document.getElementById('aSave').click()`);
 const nr = before + 1;
 await until(() => B.js(`__xl.text(${nr},'${C.first}') === 'Gus'`), `manual ride written to row ${nr}`);
 ok(await B.js(`__xl.text(${nr},'A') === '' && /^Added in the Texts panel by T\. Tester — called the line$/.test(__xl.text(${nr},'${L(idx(/^Notes/))}')) && __xl.text(${nr},'${L(idx(/^UT EID/))}') === 'gh123' && __xl.text(${nr},'${L(idx(/^Do you require/))}') === 'Yes'`), 'Id blank; EID, ADA and Notes (who added it) filled');
+ok(await B.js(`__xl.text(${nr},'${L(idx(/^Email Address/))}') === 'gus.hand@utexas.edu'`), 'email filled');
+ok(await B.js(`__xl.text(${nr},'${L(idx(/^I have read/))}') === 'I agree and adhere to the rules and guidelines laid out above.' && __xl.text(${nr},'${L(idx(/^All pick up/))}') === 'I understand and have verified my pick-up location.' && __xl.text(${nr},'${L(idx(/food establishment/))}') === 'I understand.'`), 'the three agreements filled like the form');
 ok(await B.js(`(() => { const r = SWT.X.byRow.get(${nr}); return !!r && r.id.charAt(0) === 't' && r.f.ts.slice(0, 16) === SWP.austin().slice(0, 16) && r.f.phone === '5125550160'; })()`), 'the row reads back as tonight\'s ride, submitted now');
 ok(await B.js(`document.getElementById('addCard').hidden && document.querySelector('#selRide h2').textContent.includes('Gus')`), 'form closes and the new ride is selected');
 if (process.env.TABLE) ok(await B.js(`__xl.writes.includes('table row added') && __xl.tableRows() === ${nr}`), 'rides in an Excel table: the row is added through the table');
@@ -328,12 +335,14 @@ const addApi = async b => (await fetch(`http://127.0.0.1:${SPORT}/api/addRide`, 
 const sheetRowOf = phone => B.js(`(() => { const r = SWT.X.rides.find(x => x.f.phone === '${phone}'); return r ? r.row : 0; })()`);
 ok(/first name/.test((await addApi({ first: '', phone: '5125550170', pu: 'PCL', do: 'Kins' })).error || ''), 'dashboard add: missing first name refused');
 ok(/10 digits/.test((await addApi({ first: 'Jo', phone: '555', pu: 'PCL', do: 'Kins' })).error || ''), 'dashboard add: bad phone refused');
-const ja = await addApi({ first: 'Jo', last: 'Desk', phone: '+1 512-555-0170', eid: 'jd1', pu: '=Welch Hall', do: 'Dobie', ada: 'Yes', notes: 'walk-in' });
+ok(/email/.test((await addApi({ first: 'Jo', phone: '5125550170', email: 'jo at utexas', pu: 'PCL', do: 'Kins' })).error || ''), 'dashboard add: bad email refused');
+const ja = await addApi({ first: 'Jo', last: 'Desk', phone: '+1 512-555-0170', eid: 'jd1', email: 'jo.desk@utexas.edu', pu: '=Welch Hall', do: 'Dobie', ada: 'Yes', notes: 'walk-in' });
 ok(ja.ok && /^a[0-9a-f]{8}$/.test(ja.id), 'dashboard add accepted: ' + JSON.stringify(ja));
 const jrow = await until(() => sheetRowOf('5125550170'), 'the Excel panel wrote the dashboard\'s ride into the sheet');
 if (jrow) {
   ok(await B.js(`__xl.text(${jrow},'${C.pu}') === 'Welch Hall' && __xl.text(${jrow},'${L(idx(/^Do you require/))}') === 'Yes' && __xl.text(${jrow},'${L(idx(/^UT EID/))}') === 'jd1' && __xl.text(${jrow},'A') === ''`), 'pick-up (formula sign stripped), ADA, EID filled; Id blank');
   ok(await B.js(`__xl.text(${jrow},'${L(idx(/^Notes/))}') === 'Added on the texting computer #${ja.id} — walk-in'`), 'Notes tag the request id');
+  ok(await B.js(`__xl.text(${jrow},'${L(idx(/^Email Address/))}') === 'jo.desk@utexas.edu' && __xl.text(${jrow},'${L(idx(/^I have read/))}').startsWith('I agree and adhere') && __xl.text(${jrow},'${L(idx(/food establishment/))}') === 'I understand.'`), 'dashboard add: email and agreements filled');
   ok(await B.js(`!document.querySelector('#selRide h2') || !document.querySelector('#selRide h2').textContent.includes('Jo ')`), "the dispatcher's selection isn't changed");
 }
 await until(async () => { const s = await (await fetch(`http://127.0.0.1:${SPORT}/api/status`, { method: 'POST', headers: { 'X-SW-Token': TOKEN } })).json(); return (s.adds || []).some(a => a.id === ja.id && a.state === 'added' && +a.row === jrow); }, 'server status: the add shows as added, with its row');

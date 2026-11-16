@@ -66,12 +66,12 @@
     return '<label style="display:grid;gap:3px;margin-top:8px;font-size:12px;color:var(--muted)">' + label +
       '<input id="' + id + '" autocomplete="off" style="width:100%"' + (extra || '') + '></label>';
   }
-  var FIELDS = ['swaFirst', 'swaLast', 'swaPhone', 'swaEid', 'swaPu', 'swaDo', 'swaNotes'];
+  var FIELDS = ['swaFirst', 'swaLast', 'swaPhone', 'swaEid', 'swaEmail', 'swaPu', 'swaDo', 'swaNotes'];
   function val(i) { var el = document.getElementById(i); return el ? el.value.trim() : ''; }
   async function addRide() {
     if (typeof window.ask !== 'function') return say('The dashboard is still loading.', 'warn');
     var html = field('swaFirst', 'First name') + field('swaLast', 'Last name') + field('swaPhone', 'Phone', ' type="tel" inputmode="numeric" placeholder="10 digits"') +
-      field('swaEid', 'UT EID (or N/A)') + field('swaPu', 'Pick-up') + field('swaDo', 'Drop-off') +
+      field('swaEid', 'UT EID (or N/A)') + field('swaEmail', 'Email (optional)', ' type="email"') + field('swaPu', 'Pick-up') + field('swaDo', 'Drop-off') +
       '<label style="display:grid;gap:3px;margin-top:8px;font-size:12px;color:var(--muted)">ADA assistance<select id="swaAda" style="width:100%"><option>No</option><option>Yes</option></select></label>' +
       field('swaNotes', 'Notes (optional)') +
       '<label style="display:flex;gap:8px;align-items:center;margin-top:10px;font-size:13px"><input type="checkbox" id="swaCalled"> Already talked to them — mark called (no confirmation text)</label>';
@@ -82,7 +82,7 @@
     }, 50);
     if (!(await pending)) return;
     FIELDS.forEach(function (i) { draft[i] = val(i); });
-    var body = { first: val('swaFirst'), last: val('swaLast'), phone: val('swaPhone'), eid: val('swaEid'), pu: val('swaPu'), do: val('swaDo'),
+    var body = { first: val('swaFirst'), last: val('swaLast'), phone: val('swaPhone'), eid: val('swaEid'), email: val('swaEmail'), pu: val('swaPu'), do: val('swaDo'),
       ada: val('swaAda'), notes: val('swaNotes'), called: !!(document.getElementById('swaCalled') || {}).checked };
     try {
       var r = await post('/api/addRide', body);
