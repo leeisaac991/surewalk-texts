@@ -9,6 +9,10 @@
  *   e: 'ride'  a ride as the sheet has it (the Excel panel posts it the first time it sees the ride)
  *      'upd'   some of a ride's fields changed. `was` (texting server only) = what the server believed before, so the
  *              Excel panel only writes a cell that still holds that value (a dispatcher's edit always wins).
+ *      'add'   (texting server only) "please add this ride to the sheet": a ride entered by hand on the texting
+ *              computer's dashboard. id = 'a…' (the request, not a ride). The Excel panel with sync on writes the row
+ *              (once: Notes carries "#<id>"), then posts it as a normal 'ride'. Older panels ignore it.
+ *              f: ts (when asked), first, last, phone, eid, pu, do, ada, notes, call, disp.
  *   src: 's' = the texting server, 'x…' = an Excel panel.
  *   f (fields, all strings): ts (Austin wall clock "YYYY-MM-DD HH:MM:SS"), row (sheet row), first, last, phone,
  *      pu (pick-up), do (drop-off), ada, disp (Dispatcher), call (Call Time H:MM), arr (Arrival H:MM), loc, van, drv,
@@ -21,12 +25,13 @@
   const TAG = '‹sw1›';
   const MAX = 990; // GroupMe allows 1,000 characters per message
   const FIELDS = ['ts', 'row', 'first', 'last', 'phone', 'pu', 'do', 'ada', 'disp', 'call', 'arr', 'loc', 'van', 'drv', 'nav', 'rsn', 'bg'];
+  const ADD_FIELDS = ['ts', 'first', 'last', 'phone', 'eid', 'pu', 'do', 'ada', 'notes', 'call', 'disp'];
   const LIMIT = 160; // longest value we send for one field
 
   const clean = v => String(v == null ? '' : v).replace(/[\r\n]+/g, ' ').split(TAG).join('').slice(0, LIMIT);
-  function pick(f) {
+  function pick(f, e) {
     const o = {};
-    FIELDS.forEach(k => { if (f && f[k] !== undefined && f[k] !== null) o[k] = clean(f[k]); });
+    (e === 'add' ? ADD_FIELDS : FIELDS).forEach(k => { if (f && f[k] !== undefined && f[k] !== null) o[k] = clean(f[k]); });
     return o;
   }
 
@@ -35,6 +40,7 @@
   function summary(ev, known) {
     const f = ev.f || {};
     if (ev.e === 'ride') return `🆕 ${hhmm(f.ts)} ${who(f)} · ${f.pu || '?'} → ${f.do || '?'}`;
+    if (ev.e === 'add') return `➕ please add: ${who(f)} · ${f.pu || '?'} → ${f.do || '?'}`;
     const bits = [];
     if ('rsn' in f && f.rsn && f.rsn !== '0') bits.push(`cancelled (${f.rsn})`);
     else if ('bg' in f && /^#ff0000$/i.test(f.bg)) bits.push('duplicate');
@@ -50,7 +56,7 @@
 
   /** One line for one event. `known` = the ride's fields so far (for a readable name). */
   function line(ev, known) {
-    const out = { e: ev.e, id: String(ev.id), src: String(ev.src || ''), f: pick(ev.f) };
+    const out = { e: ev.e, id: String(ev.id), src: String(ev.src || ''), f: pick(ev.f, ev.e) };
     if (ev.was) out.was = pick(ev.was);
     return clean(summary(out, known)).replace(/[{}]/g, '').slice(0, 90) + ' ' + TAG + JSON.stringify(out);
   }
@@ -74,8 +80,8 @@
       if (i < 0) return;
       try {
         const ev = JSON.parse(l.slice(i + TAG.length));
-        if (ev && (ev.e === 'ride' || ev.e === 'upd') && ev.id && ev.f && typeof ev.f === 'object') {
-          evs.push({ e: ev.e, id: String(ev.id), src: String(ev.src || ''), f: pick(ev.f), was: ev.was ? pick(ev.was) : null });
+        if (ev && (ev.e === 'ride' || ev.e === 'upd' || ev.e === 'add') && ev.id && ev.f && typeof ev.f === 'object') {
+          evs.push({ e: ev.e, id: String(ev.id), src: String(ev.src || ''), f: pick(ev.f, ev.e), was: ev.was ? pick(ev.was) : null });
         }
       } catch (e) { /* not ours / cut off */ }
     });
@@ -84,6 +90,7 @@
 
   /** The rides as the chat describes them: fold events in chat order. state = { rides: { id: { id, f, at, src } } } */
   function fold(state, ev, at) {
+    if (ev.e === 'add') return null; // a request, not a ride
     const r = state.rides[ev.id] || (state.rides[ev.id] = { id: ev.id, f: {}, at: 0, src: '' });
     Object.assign(r.f, ev.f);
     r.at = at || Date.now();

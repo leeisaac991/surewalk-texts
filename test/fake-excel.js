@@ -39,6 +39,9 @@
     get values() { return this.grid(x => x.v); }
     set values(g) { this.each((x, i, j) => { const t = typeof g[i][j] === 'string' ? typed(g[i][j]) : { v: g[i][j], fmt: x.fmt }; x.v = t.v; if (typeof g[i][j] === 'string') x.fmt = t.fmt; }); writes.push(`${this.r + 1}:${this.c + 1}=${JSON.stringify(g)}`); }
     get text() { return this.grid(text); }
+    get formulasR1C1() { return this.grid(x => x.f || x.v); }
+    set formulasR1C1(g) { this.each((x, i, j) => { x.f = g[i][j]; }); writes.push(`${this.r + 1}:${this.c + 1} formula ${g[0][0]}`); }
+    insert(dir) { const blank = () => { const l = []; for (let j = 0; j < W; j++) l.push(newCell('')); return l; }; for (let i = 0; i < this.h; i++) grid.splice(this.r, 0, blank()); writes.push(`${this.r + 1} inserted ${dir}`); }
     set numberFormat(g) { this.each((x, i, j) => { x.fmt = g[i][j]; }); }
     get numberFormat() { return this.grid(x => x.fmt); }
     clear() { this.each(x => { x.v = ''; x.fmt = 'General'; }); writes.push(`${this.r + 1}:${this.c + 1} cleared`); }
@@ -56,6 +59,12 @@
     },
     getUsedRangeOrNullObject() { return { isNullObject: false, rowIndex: 0, rowCount: lastRow(), load() {} }; },
     onSelectionChanged: { add(h) { selHandlers.push(h); } } };
+  // FAKE_SHEET.table: the rides are an Excel table (header row 1 down to the last ride when the page loads)
+  const tbl = { rows: window.FAKE_SHEET.table ? lastRow() : 0 };
+  ws.tables = { items: tbl.rows ? [{ name: 'Table1', getRange: () => ({ load() {}, rowIndex: 0, rowCount: tbl.rows, columnIndex: 0, columnCount: W }),
+    rows: { add() { // like Excel: a new row at the table's end, pushing whatever sits below down
+      const l = []; for (let j = 0; j < W; j++) l.push(newCell('')); cell(tbl.rows, 0); grid.splice(tbl.rows, 0, l);
+      tbl.rows++; writes.push('table row added'); } } }] : [], load() {} };
   // like the live workbook: an empty-ish "Pairings" tab FIRST, the month's rides tab after it
   ws.name = 'November';
   const pairings = { name: 'Pairings', load() {}, getRangeByIndexes: () => ({ load() {}, text: [['11/10/2026', 'Driver', 'Navigator']] }),
@@ -67,8 +76,8 @@
   window.Excel = { run: async fn => fn({ workbook, sync: async () => {} }), ClearApplyTo: { contents: 'Contents' } };
   window.Office = { onReady: cb => setTimeout(() => cb({ host: 'Excel' }), 0) };
   const col = c => colN(c) - 1;
-  window.__xl = { writes, text: (r, c) => text(cell(r - 1, col(c))), bg: (r, c) => cell(r - 1, col(c)).bg, fc: (r, c) => cell(r - 1, col(c)).fc,
-    type(r, c, s) { Object.assign(cell(r - 1, col(c)), typed(s)); }, row(r, vals) { vals.forEach((s, j) => Object.assign(cell(r - 1, j), typed(s))); },
+  window.__xl = { writes, tableRows: () => tbl.rows, text: (r, c) => text(cell(r - 1, col(c))), bg: (r, c) => cell(r - 1, col(c)).bg, fc: (r, c) => cell(r - 1, col(c)).fc,
+    type(r, c, s) { Object.assign(cell(r - 1, col(c)), typed(s)); }, row(r, vals) { vals.forEach((s, j) => Object.assign(cell(r - 1, j), typed(s))); if (tbl.rows && r === tbl.rows + 1) tbl.rows++; }, // a form response grows the table
     paint(r, color) { for (let j = 0; j < W; j++) cell(r - 1, j).bg = color; },
     click(r) { selected = 'R' + r; selHandlers.forEach(h => h({ address: ws.name + '!K' + r })); } };
 })();

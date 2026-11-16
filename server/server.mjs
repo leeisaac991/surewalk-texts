@@ -53,6 +53,8 @@ const gas = gasLib.install(STATE, store);
 function loadCode() {
   const files = ['Build.gs', 'Places.gs', 'Rides.gs', 'Texts.gs', 'Bridge.gs', 'Code.gs'].filter(f => fs.existsSync(path.join(GS, f)));
   if (!files.includes('Code.gs')) throw new Error(`The SURE Walk Texts code isn't in ${GS} (set SUREWALK_GS).`);
+  // Tests only: SW_SEND_GAP_MS=0 turns off the texting code's send pacing (one text every 6 s in real use).
+  if (process.env.SW_SEND_GAP_MS != null) globalThis.SW_SEND_GAP_MS = Number(process.env.SW_SEND_GAP_MS);
   vm.runInThisContext(files.map(f => `;/* ${f} */\n` + fs.readFileSync(path.join(GS, f), 'utf8')).join('\n'), { filename: 'surewalk-texts.gs' });
   log('loaded', files.join(' '), 'from', GS);
 }
@@ -158,6 +160,45 @@ function shipChanges() {
   saveOut();
 }
 
+/*
+ * ＋ Ride from the dashboard: this server can't write the Excel sheet, so it asks the Excel panel (sync on) to add the
+ * row ('add' event). The ride then comes back as a normal ride (texted like any other unless it was marked called).
+ * adds = what we asked for, until the ride shows up (same phone, submitted since) or 30 min pass.
+ */
+const ADD_WAIT_MS = 30 * 60e3, adds = [];
+const digits = s => String(s || '').replace(/\D/g, '');
+const tonight = () => Object.values(store.rides).filter(r => SWP.nightOf(r.f.ts) === SWP.nightOf(SWP.austin()));
+const isOpen = r => !(r.f.rsn && r.f.rsn !== '0') && !/^#(000000|ff0000)$/i.test(r.f.bg || '');
+function addState(a) {
+  const back = tonight().find(r => digits(r.f.phone).slice(-10) === a.phone10 && r.f.ts >= a.ts.slice(0, 16));
+  if (back) return { state: 'added', row: back.f.row };
+  return { state: Date.now() - a.at > ADD_WAIT_MS ? 'lost' : 'waiting' };
+}
+function requestAdd(b) {
+  const t = k => String(b[k] == null ? '' : b[k]).replace(/^[=+@-]+/, '').replace(/[\r\n]+/g, ' ').trim().slice(0, 150); // never a formula
+  let phone = digits(b.phone);
+  if (phone.length === 11 && phone.charAt(0) === '1') phone = phone.slice(1);
+  const f = { first: t('first'), last: t('last'), phone, eid: t('eid'), pu: t('pu'), do: t('do'), ada: /^y/i.test(b.ada) ? 'Yes' : 'No', notes: t('notes') };
+  const miss = [['first', 'first name'], ['pu', 'pick-up'], ['do', 'drop-off']].filter(([k]) => !f[k]).map(x => x[1]);
+  if (miss.length) return { ok: false, error: 'Fill in the ' + miss.join(', ') + '.' };
+  if (phone.length !== 10) return { ok: false, error: 'The phone number needs 10 digits.' };
+  if (!conf.groupId || !sync.ready) return { ok: false, error: "GroupMe sync isn't running, so the Excel panel can't get the ride. Set it up first (GroupMe pill)." };
+  if (!b.force) {
+    const same = tonight().find(r => isOpen(r) && digits(r.f.phone).slice(-10) === phone);
+    if (same) return { ok: false, dup: `${same.f.first || 'Someone'}${same.f.last ? ' ' + same.f.last : ''} already has an open ride tonight with that phone (row ${same.f.row}).` };
+    const asked = adds.find(a => a.phone10 === phone && addState(a).state === 'waiting');
+    if (asked) return { ok: false, dup: `You already asked to add a ride for that phone ${Math.round((Date.now() - asked.at) / 60e3)} min ago — it's still waiting for the Excel panel.` };
+  }
+  const ts = SWP.austin();
+  if (b.called) { const w = new Date(); f.call = `${w.getHours()}:${String(w.getMinutes()).padStart(2, '0')}`; } // TZ is Austin
+  const ev = { e: 'add', id: 'a' + crypto.randomBytes(4).toString('hex'), src: 's', f: Object.assign({ ts }, f) };
+  outLines.push(SWP.line(ev)); saveOut();
+  adds.push({ id: ev.id, first: f.first, phone10: phone, ts, at: Date.now() });
+  if (adds.length > 50) adds.shift();
+  log('→ add ride', ev.id, f.first, f.pu, '→', f.do);
+  return { ok: true, id: ev.id };
+}
+
 let loopBusy = false, nextPostAt = 0;
 async function loop() {
   if (loopBusy) return;
@@ -213,7 +254,8 @@ const csvCell = v => { const s = v && typeof v === 'object' && 'd' in v ? new Da
 function status() {
   return { ready: sync.ready, configured: !!(conf.token && conf.groupId), group: conf.groupName || '', groupId: conf.groupId || '',
     lastPollAt: sync.lastPollAt, lastError: sync.lastError, lastExcelAt: sync.lastExcelAt, waiting: outLines.length, posted: sync.posted,
-    rides: Object.values(store.rides).filter(r => SWP.nightOf(r.f.ts) === SWP.nightOf(SWP.austin())).length, port: PORT };
+    rides: tonight().length, port: PORT,
+    adds: adds.filter(a => Date.now() - a.at < 2 * ADD_WAIT_MS).map(a => Object.assign({ id: a.id, first: a.first, at: a.at }, addState(a))) };
 }
 
 const server = http.createServer(async (req, res) => {
@@ -246,6 +288,7 @@ const server = http.createServer(async (req, res) => {
         catch (e) { return send(res, 200, { ok: false, error: String((e && e.message) || e) }); }
       }
       if (p === '/api/status') return send(res, 200, status());
+      if (p === '/api/addRide') return send(res, 200, requestAdd(body || {}));
       if (p === '/api/groups') { // check a token and list its chats
         const token = cleanTok(body.token || conf.token || '');
         if (!/^[A-Za-z0-9_-]{20,128}$/.test(token)) return send(res, 200, { ok: false, error: "That doesn't look like a GroupMe token." });
