@@ -22,7 +22,7 @@
     get(k, d) { try { const v = localStorage.getItem('swt.' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
     set(k, v) { try { localStorage.setItem('swt.' + k, JSON.stringify(v)); } catch (e) { /* this session only */ } },
   };
-  let set = Object.assign({ name: '', dispName: true, tab: '', token: '', groupId: '', groupName: '', sync: false }, ls.get('settings', {}));
+  let set = Object.assign({ name: '', dispName: true, tab: '', lookback: 6, token: '', groupId: '', groupName: '', sync: false }, ls.get('settings', {}));
   let src = ls.get('src', '');
   if (!src) { src = 'x' + Math.random().toString(16).slice(2, 7); ls.set('src', src); }
 
@@ -116,15 +116,84 @@
     return months[0] || tabs[0] || names[0];
   }
   let ridesTab = '';
+  let allTabList = [];
   async function sheetOf(ctx, reuse) {
     if (set.tab) return ctx.workbook.worksheets.getItem(set.tab);
     if (!(reuse && ridesTab)) {
       const wss = ctx.workbook.worksheets; wss.load('items/name,items/position'); await ctx.sync();
-      ridesTab = pickRidesTab(wss.items.slice().sort((a, b) => a.position - b.position).map(x => x.name), nightMonth());
+      allTabList = wss.items.slice().sort((a, b) => a.position - b.position).map(x => ({ name: x.name, position: x.position }));
+      ridesTab = pickRidesTab(allTabList.map(x => x.name), nightMonth());
     }
     return ctx.workbook.worksheets.getItem(ridesTab);
   }
   let X = null; // { name, col, rides: [ride], byId, byRow }
+  let pastRides = [];
+  let pastRidesAt = 0;
+  let pastRidesLookback = -1;
+  async function syncPastRides(ctx, allTabs) {
+    const lookback = set.lookback != null ? set.lookback : 6;
+    if (Date.now() - pastRidesAt < 300e3 && pastRidesLookback === lookback) return;
+    try {
+      const curMonth = nightMonth();
+      const pastTabs = (allTabs || [])
+        .filter(t => !/pairing/i.test(t.name) && t.name !== ridesTab && monthOfTab(t.name) >= 0)
+        .map(t => ({ name: t.name, back: (curMonth - monthOfTab(t.name) + 12) % 12 }))
+        .filter(t => t.back > 0 && t.back <= lookback)
+        .sort((a, b) => a.back - b.back);
+
+      if (!pastTabs.length) {
+        pastRides = [];
+        pastRidesAt = Date.now();
+        pastRidesLookback = lookback;
+        return;
+      }
+
+      const tabsToLoad = [];
+      for (const pt of pastTabs) {
+        const ws = ctx.workbook.worksheets.getItem(pt.name);
+        const used = ws.getUsedRangeOrNullObject(true); used.load('rowIndex,rowCount');
+        const hdr = ws.getRangeByIndexes(0, 0, 1, READ_COLS); hdr.load('text');
+        tabsToLoad.push({ name: pt.name, ws, used, hdr });
+      }
+      await ctx.sync();
+
+      const rangesToLoad = [];
+      for (const item of tabsToLoad) {
+        if (!item.used.isNullObject) {
+          const col = layoutOf(item.hdr.text[0]);
+          const lastRow = item.used.rowIndex + item.used.rowCount;
+          const top = Math.max(2, lastRow - SCAN_ROWS - 60);
+          if (lastRow >= top) {
+            const rg = item.ws.getRangeByIndexes(top - 1, 0, lastRow - top + 1, READ_COLS);
+            rg.load('values,text');
+            rangesToLoad.push({ item, col, top, rg });
+          }
+        }
+      }
+      if (rangesToLoad.length) await ctx.sync();
+
+      const collected = [];
+      for (const { col, top, rg } of rangesToLoad) {
+        for (let i = 0; i < rg.values.length; i++) {
+          const v = rg.values[i], t = rg.text[i];
+          const ts = rowTs(col, v, t);
+          if (!ts) continue;
+          const get = k => (col[k] ? String(t[col[k] - 1] == null ? '' : t[col[k] - 1]).trim() : '');
+          const f = { ts, row: String(top + i) };
+          RIDE_FIELDS.forEach(k => { f[k] = get(k); });
+          if (f.rsn === '0') f.rsn = '';
+          if (/^#+$/.test(f.phone)) f.phone = String(v[col.phone - 1]);
+          collected.push({ id: rideId(col, v, t, ts), row: top + i, f, notes: get('notes') });
+        }
+      }
+      pastRides = collected;
+      pastRidesAt = Date.now();
+      pastRidesLookback = lookback;
+    } catch (e) {
+      /* ignore read errors on past tabs */
+    }
+  }
+
   function rowColor(cells, cols) { // the row's color: the most common fill among the ride columns
     const n = {};
     cols.forEach(c => { const v = cells[c - 1] && cells[c - 1].bg; if (v) n[v] = (n[v] || 0) + 1; });
@@ -164,6 +233,7 @@
         const id = rideId(col, v, t, ts);
         rides.push({ id, row: top + i, f, cells, notes: get('notes') });
       }
+      await syncPastRides(ctx, allTabList);
       return { name: ws.name, col, rides, lastRow };
     });
     await clearCopiedColors(X);
@@ -604,7 +674,7 @@
   set = Object.assign({ theme: 'auto', accent: 'orange', mascot: 'bam' }, set);
   if (set.mascot === 'm1') set.mascot = 'bam'; else if (set.mascot === 'm2') set.mascot = 'bevo'; // the placeholders before
   const who2 = f => f.first || who(f);
-  const digits10 = s => String(s || '').replace(/\D/g, '').slice(-10);
+  const digits10 = s => { let d = String(s || '').replace(/\D/g, ''); if (d.length === 11 && d[0] === '1') d = d.slice(1); return d.length === 10 ? d : ''; };
   const fmtPhone = s => { const d = digits10(s); return d.length === 10 ? `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}` : String(s || ''); };
   const timeOf = r => ampm(r.f.ts.slice(11, 16));
   // status model: new (not called), called, cancelled, duplicate (and picked up)
@@ -698,6 +768,7 @@
     group: (ids, letter) => groupRides(ids, letter),
     ungroup: id => ungroupRide(id),
     addRide: a => addRide(a),
+    lookupRider: p => lookupRider(p),
     undo: () => undo(),
     settings: patch => saveSettings(patch),
     selectRow: id => { const r = X && X.byId.get(id); if (r) Excel.run(async ctx => { (await sheetOf(ctx, true)).getRange(`${letter(X.col.first || 1)}${r.row}`).select(); await ctx.sync(); }).catch(() => {}); },
@@ -705,9 +776,10 @@
   function api(name, ...args) { return REMOTE ? remoteCall(name, args) : Promise.resolve().then(() => ACTIONS[name](...args)); }
   function saveSettings(patch) {
     const tabChanged = 'tab' in patch && patch.tab !== set.tab;
+    const lookbackChanged = 'lookback' in patch && patch.lookback !== set.lookback;
     set = Object.assign({}, set, patch); ls.set('settings', set);
     applyAppearance(); render();
-    if (tabChanged) { ridesTab = ''; tick(); }
+    if (tabChanged || lookbackChanged) { pastRidesAt = 0; if (tabChanged) ridesTab = ''; tick(); }
     pushSnap(true);
   }
 
@@ -870,6 +942,7 @@
     $('setModal').hidden = !on;
     if (!on) return;
     $('setTab').value = set.tab || '';
+    if ($('setLookback')) $('setLookback').value = set.lookback != null ? set.lookback : 6;
     renderSettings();
   }
   function renderSettings() {
@@ -882,6 +955,10 @@
   const setChange = patch => { if (REMOTE) { Object.assign(set, patch); applyAppearance(); renderSettings(); renderCalling(true); api('settings', patch).catch(() => {}); } else { saveSettings(patch); renderSettings(); } };
   document.querySelectorAll('.mnav button').forEach(b => b.addEventListener('click', () => { setSec = b.dataset.sc; renderSettings(); }));
   $('setTab').addEventListener('change', () => setChange({ tab: $('setTab').value.trim() }));
+  if ($('setLookback')) $('setLookback').addEventListener('change', () => {
+    const n = parseInt($('setLookback').value, 10);
+    setChange({ lookback: isNaN(n) ? 6 : Math.max(0, Math.min(24, n)) });
+  });
   $('themeSeg').addEventListener('click', e => { const b = e.target.closest('[data-th]'); if (b) setChange({ theme: b.dataset.th }); });
   $('accRow').addEventListener('click', e => { const b = e.target.closest('[data-acc]'); if (b) setChange({ accent: b.dataset.acc }); });
   $('mascRow').addEventListener('click', e => { const b = e.target.closest('[data-masc]'); if (b) setChange({ mascot: b.dataset.masc }); });
@@ -1038,75 +1115,246 @@
     $('addCard').hidden = !on;
     if (!on) return;
     $('addCard').querySelectorAll('input:not([type=checkbox])').forEach(el => { el.value = ''; });
+    clearPriorFill();
     $('aAda').value = 'No'; $('aCalled').checked = false; $('aMsg').textContent = ''; $('aConfirm').hidden = true; addPending = null;
     if ($('aPrior')) { $('aPrior').hidden = true; $('aPrior').innerHTML = ''; }
     $('aEidRow').hidden = !!(X && X.col && !X.col.eid);
     $('aEmailRow').hidden = !!(X && X.col && !X.col.email);
-    $('aFirst').focus();
+    if ($('aPhone')) $('aPhone').focus();
   }
-  function fillPriorRider(c) {
-    if (c.first) $('aFirst').value = c.first;
-    if (c.last) $('aLast').value = c.last;
-    if (c.eid && $('aEid')) $('aEid').value = c.eid;
-    if (c.email && $('aEmail')) $('aEmail').value = c.email;
-    if (c.pu && !$('aPu').value.trim()) $('aPu').value = c.pu;
-    if (c.do && !$('aDo').value.trim()) $('aDo').value = c.do;
-    if (c.ada && $('aAda')) $('aAda').value = /yes/i.test(c.ada) ? 'Yes' : 'No';
-    const st = $('aPriorStatus');
-    if (st) st.textContent = `✓ Filled for ${c.fullName}`;
+
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  function shortDate(d) { const m = /^(\d{4})-(\d\d)-(\d\d)/.exec(d || ''); return m ? MON[+m[2] - 1] + ' ' + (+m[3]) : d || ''; }
+  let lookupTimer = null, lookupSlow = null, lookupSeq = 0, lookupData = null, filledFields = {};
+
+  function lookupRider(phoneInput) {
+    const phone = digits10(phoneInput);
+    if (!phone) return { ok: true, rides: 0 };
+    const all = [];
+    const seenIds = new Set();
+    const addRec = r => {
+      if (!r) return;
+      const f = r.f || r;
+      const p = digits10(f.phone);
+      if (p !== phone) return;
+      const id = r.id || (String(f.ts || '') + (f.first || ''));
+      if (seenIds.has(id)) return;
+      seenIds.add(id);
+      const bg = String(f.bg || '').toLowerCase(), rsn = String(f.rsn || '');
+      all.push({
+        id,
+        ts: String(f.ts || ''),
+        row: r.row,
+        first: String(f.first || '').trim(),
+        last: String(f.last || '').trim(),
+        eid: String(f.eid || '').trim(),
+        email: String(f.email || '').trim(),
+        ada: /^y/i.test(String(f.ada || '')),
+        pu: String(f.pu || '').trim(),
+        do: String(f.do || '').trim(),
+        cancelled: !!rsn || bg === '#000000',
+        dup: bg === '#ff0000',
+        noShow: /no.?show/i.test(rsn),
+        off: /off.?campus|invalid/i.test(rsn),
+        optOut: /stop|opt.?out/i.test(rsn) || /stop|opt.?out/i.test(String(r.notes || '')),
+      });
+    };
+    if (X && X.rides) X.rides.forEach(addRec);
+    if (pastRides && pastRides.length) pastRides.forEach(addRec);
+
+    all.sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : (b.row || 0) - (a.row || 0)));
+    if (!all.length) return { ok: true, rides: 0 };
+
+    const norm = s => s.replace(/\s+/g, ' ').trim().toLowerCase();
+    const day = ts => String(ts).slice(0, 10);
+    const names = new Map();
+    all.forEach(r => {
+      const k = norm(r.first + ' ' + r.last);
+      if (!k) return;
+      const n = names.get(k) || names.set(k, { first: r.first, last: r.last, count: 0, lastDate: day(r.ts), eid: '', email: '', ada: false }).get(k);
+      n.count++;
+      if (r.ada) n.ada = true;
+      if (!n.eid && r.eid) n.eid = r.eid;
+      if (!n.email && r.email) n.email = r.email;
+    });
+    all.forEach(r => {
+      const n = names.get(norm(r.first + ' ' + r.last));
+      if (n) {
+        if (!n.eid && r.eid) n.eid = r.eid;
+        if (!n.email && r.email) n.email = r.email;
+      }
+    });
+
+    const top = (key, n) => {
+      const m = new Map();
+      all.forEach(r => { const k = key(r); if (k) m.set(k, (m.get(k) || 0) + 1); });
+      return [...m].sort((a, b) => b[1] - a[1]).slice(0, n).map(([k, count]) => ({ k, count }));
+    };
+
+    const eids = [...new Set(all.map(r => r.eid.toLowerCase()).filter(e => e && !/^n\/?a$/i.test(e)))];
+    const emails = new Set(all.map(r => r.email.toLowerCase()).filter(Boolean)).size;
+    const routes = top(r => (r.pu && r.do ? r.pu + '→' + r.do : ''), 3).map(x => ({ k: x.k, pu: x.k.split('→')[0], do: x.k.split('→')[1], count: x.count }));
+    const optOut = all.some(r => r.optOut);
+
+    return {
+      ok: true,
+      rides: all.length,
+      lastDate: day(all[0].ts),
+      names: [...names.values()],
+      eid: (all.find(r => r.eid) || {}).eid || '',
+      eids: eids.length,
+      email: (all.find(r => r.email) || {}).email || '',
+      emails,
+      ada: all.some(r => r.ada),
+      pickups: top(r => r.pu, 3),
+      dropoffs: top(r => r.do, 3),
+      routes,
+      cancels: all.filter(r => r.cancelled && !r.noShow).length,
+      noShows: all.filter(r => r.noShow).length,
+      dups: all.filter(r => r.dup).length,
+      optOut,
+      wasOff: all.some(r => r.off),
+    };
   }
-  function checkPriorPhone() {
+
+  function setPriorTag(id, on) {
+    const el = $(id), lab = el && el.closest('label');
+    if (!lab) return;
+    let t = lab.querySelector('.aprior-tag');
+    if (on && !t) {
+      t = document.createElement('span');
+      t.className = 'aprior-tag';
+      t.textContent = 'from past ride';
+      lab.insertBefore(t, el);
+    }
+    if (!on && t) t.remove();
+  }
+  function setPriorValue(id, val) {
+    const el = $(id);
+    if (!el) return;
+    el.value = val;
+    setPriorTag(id, true);
+    filledFields[id] = val;
+    el.addEventListener('input', () => setPriorTag(id, false), { once: true });
+  }
+  function clearPriorFill() {
+    Object.keys(filledFields).forEach(id => {
+      const el = $(id);
+      if (el && el.value === filledFields[id]) el.value = id === 'aAda' ? 'No' : '';
+      setPriorTag(id, false);
+    });
+    filledFields = {};
+  }
+  function pickPriorName(idx) {
+    if (!lookupData || !lookupData.names || !lookupData.names[idx]) return;
+    const n = lookupData.names[idx];
+    clearPriorFill();
+    setPriorValue('aFirst', n.first);
+    setPriorValue('aLast', n.last);
+    if (n.eid || lookupData.eid) setPriorValue('aEid', n.eid || lookupData.eid);
+    if (n.email || lookupData.email) setPriorValue('aEmail', n.email || lookupData.email);
+    if (lookupData.ada) setPriorValue('aAda', 'Yes');
+    const box = $('aPrior');
+    if (box) {
+      box.querySelectorAll('[data-name]').forEach(b => {
+        b.classList.toggle('on', +b.dataset.name === idx);
+      });
+      const adaNote = $('aAdaNote');
+      if (adaNote) adaNote.hidden = !lookupData.ada;
+    }
+  }
+  function renderLookup() {
     const box = $('aPrior');
     if (!box) return;
-    let phone = $('aPhone').value.replace(/\D/g, '');
-    if (phone.length === 11 && phone.charAt(0) === '1') phone = phone.slice(1);
-    if (phone.length !== 10 || !X || !X.rides) {
-      box.hidden = true; box.innerHTML = ''; return;
+    if (!lookupData || !lookupData.rides) {
+      box.innerHTML = '<div class="aprior-quiet">No past rides for this number.</div>';
+      box.hidden = false;
+      return;
     }
-    const matches = X.rides.filter(r => digits10(r.f.phone) === phone);
-    if (!matches.length) {
-      box.hidden = true; box.innerHTML = ''; return;
-    }
-    const byName = new Map();
-    matches.forEach(r => {
-      const fn = (r.f.first || '').trim(), ln = (r.f.last || '').trim();
-      const fullName = `${fn} ${ln}`.trim() || fn || 'Rider';
-      if (!byName.has(fullName)) {
-        byName.set(fullName, {
-          first: fn, last: ln, fullName,
-          eid: (r.f.eid || '').trim(),
-          email: (r.f.email || '').trim(),
-          pu: (r.f.pu || '').trim(),
-          do: (r.f.do || '').trim(),
-          ada: (r.f.ada || '').trim(),
-          count: 0,
-          lastRow: r.row || 0,
-        });
-      }
-      const rec = byName.get(fullName);
-      rec.count++;
-      if (!rec.eid && r.f.eid) rec.eid = (r.f.eid || '').trim();
-      if (!rec.email && r.f.email) rec.email = (r.f.email || '').trim();
-      if (!rec.pu && r.f.pu) rec.pu = (r.f.pu || '').trim();
-      if (!rec.do && r.f.do) rec.do = (r.f.do || '').trim();
-      if (!rec.ada && r.f.ada) rec.ada = (r.f.ada || '').trim();
-      if (r.row && r.row > rec.lastRow) rec.lastRow = r.row;
-    });
-    const candidates = Array.from(byName.values()).sort((a, b) => (b.count - a.count) || (b.lastRow - a.lastRow));
+    const warn = [];
+    if (lookupData.eids > 1) warn.push(`This number has used ${lookupData.eids} different EIDs. Confirm theirs.`);
+    if (lookupData.optOut) warn.push("Opted out of texts (STOP). They won't get the confirmation text — tick “Already talked to them — mark called now”.");
+    if (lookupData.noShows) warn.push(`${lookupData.noShows} no-show${lookupData.noShows > 1 ? 's' : ''} in past rides.`);
+
+    box.innerHTML = `<h4>Rode ${lookupData.rides} time${lookupData.rides > 1 ? 's' : ''} · last on ${esc(shortDate(lookupData.lastDate))}</h4>` +
+      (lookupData.names.length ? `<div class="aprior-row"><span class="lbl">Is this…?</span>` +
+        lookupData.names.map((n, i) => `<button type="button" class="btn aprior-chip" data-name="${i}" ${i === 0 ? 'id="aPriorFill"' : ''} title="Last used ${esc(shortDate(n.lastDate))}"><b>${esc((n.first + ' ' + n.last).trim())}</b> · ${n.count}×</button>`).join('') +
+        `<button type="button" class="btn aprior-chip" id="aPriorElse">Someone else</button></div>` : '') +
+      `<div id="aAdaNote" class="aprior-quiet" hidden>Was ADA before, check with them.</div>` +
+      (lookupData.routes && lookupData.routes.length ? `<div class="aprior-row"><span class="lbl">Recent trips</span>` +
+        lookupData.routes.map((t, i) => `<button type="button" class="btn aprior-trip" data-trip="${i}" title="Fill Pick-up and Drop-off">${esc(t.pu)} → ${esc(t.do)} · ${t.count}×</button>`).join('') + `</div>` : '') +
+      warn.map(w => `<div class="aprior-warn">${esc(w)}</div>`).join('');
     box.hidden = false;
-    if (candidates.length === 1) {
-      const c = candidates[0];
-      box.innerHTML = `<div class="aprior-title"><span>Found prior rider (${c.count} ${c.count === 1 ? 'ride' : 'rides'}):</span><span class="aprior-ok" id="aPriorStatus"></span></div>` +
-        `<div class="aprior-ask">Ask: <b>"Are you ${esc(c.fullName)}?"</b></div>` +
-        `<div class="aprior-chips"><button type="button" class="btn aprior-chip" id="aPriorFill">Prefill ${esc(c.first || c.fullName)}'s info</button></div>`;
-      $('aPriorFill').addEventListener('click', () => fillPriorRider(c));
-    } else {
-      box.innerHTML = `<div class="aprior-title"><span>Multiple past names (${matches.length} rides). Ask: "Are you…":</span><span class="aprior-ok" id="aPriorStatus"></span></div>` +
-        `<div class="aprior-chips">${candidates.map((c, idx) => `<button type="button" class="btn aprior-chip" data-idx="${idx}"><b>${esc(c.fullName)}</b> (${c.count})</button>`).join('')}</div>`;
-      box.querySelectorAll('.aprior-chip').forEach(btn => {
-        btn.addEventListener('click', () => fillPriorRider(candidates[+btn.dataset.idx]));
-      });
+
+    box.querySelectorAll('[data-name]').forEach(b => {
+      b.onclick = () => pickPriorName(+b.dataset.name);
+    });
+    box.querySelectorAll('[data-trip]').forEach(b => {
+      b.onclick = () => {
+        const t = lookupData.routes[+b.dataset.trip];
+        if (t) {
+          setPriorValue('aPu', t.pu);
+          setPriorValue('aDo', t.do);
+        }
+      };
+    });
+    const other = $('aPriorElse');
+    if (other) {
+      other.onclick = () => {
+        clearPriorFill();
+        lookupData = null;
+        box.hidden = true;
+        box.innerHTML = '';
+      };
     }
+  }
+
+  async function runLookup() {
+    const ph = $('aPhone'), box = $('aPrior');
+    if (!ph || !box) return;
+    const p = digits10(ph.value);
+    const my = ++lookupSeq;
+    clearTimeout(lookupSlow);
+    if (!p) {
+      if (lookupData !== null || !box.hidden) {
+        clearPriorFill();
+        lookupData = null;
+        box.hidden = true;
+        box.innerHTML = '';
+      }
+      return;
+    }
+    if (!REMOTE) {
+      clearPriorFill();
+      lookupData = lookupRider(p);
+      renderLookup();
+      return;
+    }
+    lookupSlow = setTimeout(() => {
+      if (my === lookupSeq) {
+        box.innerHTML = '<div class="aprior-quiet">Looking up past rides…</div>';
+        box.hidden = false;
+      }
+    }, 200);
+    try {
+      const res = await remoteCall('lookupRider', [p]);
+      if (my !== lookupSeq) return;
+      clearTimeout(lookupSlow);
+      clearPriorFill();
+      lookupData = res && res.ok ? res : null;
+      renderLookup();
+    } catch (e) {
+      if (my === lookupSeq) {
+        clearTimeout(lookupSlow);
+        box.hidden = true;
+      }
+    }
+  }
+  function checkPriorPhone() {
+    clearTimeout(lookupTimer);
+    const p = digits10($('aPhone') ? $('aPhone').value : '');
+    if (!p || p.length === 10) runLookup();
+    else lookupTimer = setTimeout(runLookup, 300);
   }
   $('aPhone').addEventListener('input', checkPriorPhone);
   $('addBtn').addEventListener('click', () => showAdd(true));
@@ -1176,7 +1424,7 @@
     if (!X) return { err: loadErr || 'Loading…' };
     return { name: X.name, col: { txs: !!X.col.txs, eid: !!X.col.eid, email: !!X.col.email }, err: loadErr,
       rides: X.tonight.map(r => ({ id: r.id, row: r.row, f: r.f, notes: r.notes || '' })),
-      set: { tab: set.tab, theme: set.theme, accent: set.accent, mascot: set.mascot } };
+      set: { tab: set.tab, lookback: set.lookback, theme: set.theme, accent: set.accent, mascot: set.mascot } };
   }
   function pushSnap(force) {
     if (!dlg) return;

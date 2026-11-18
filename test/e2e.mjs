@@ -335,10 +335,17 @@ ok(await B.js(`__xl.text(${nr},'${L(idx(/^I have read/))}') === 'I agree and adh
 ok(await B.js(`(() => { const r = SWT.X.byRow.get(${nr}); return !!r && r.id.charAt(0) === 't' && r.f.ts.slice(0, 16) === SWP.austin().slice(0, 16) && r.f.phone === '5125550160'; })()`), 'the row reads back as tonight\'s ride, submitted now');
 ok(await B.js(`document.getElementById('addCard').hidden && document.getElementById('cName').textContent.includes('Gus')`), 'form closes and the new ride is selected');
 await B.js(`document.getElementById('addBtn').click()`);
+ok(await B.js(`document.activeElement === document.getElementById('aPhone')`), 'phone gets focus when ＋ Ride opens');
 await B.js(`document.getElementById('aPhone').value = '5125550160'; document.getElementById('aPhone').dispatchEvent(new Event('input'))`);
 ok(await B.js(`!document.getElementById('aPrior').hidden && /Gus Hand/.test(document.getElementById('aPrior').textContent)`), 'entering known phone looks up prior rider name');
 await B.js(`document.getElementById('aPriorFill').click()`);
 ok(await B.js(`document.getElementById('aFirst').value === 'Gus' && document.getElementById('aLast').value === 'Hand' && document.getElementById('aEid').value === 'gh123' && document.getElementById('aEmail').value === 'gus.hand@utexas.edu' && document.getElementById('aAda').value === 'Yes'`), 'prefill populates prior name, eid, email, and ada');
+ok(await B.js(`document.getElementById('aPu').value === '' && document.getElementById('aDo').value === ''`), 'pick-up and drop-off stay empty until trip chip clicked');
+ok(await B.js(`document.querySelectorAll('.aprior-tag').length >= 4`), 'filled fields have "from past ride" tags');
+await B.js(`(() => { const t = document.querySelector('.aprior-trip'); if (t) t.click(); })()`);
+ok(await B.js(`document.getElementById('aPu').value === 'Jester West' && document.getElementById('aDo').value === 'Dobie'`), 'trip chip fills pick-up and drop-off');
+await B.js(`document.getElementById('aPriorElse').click()`);
+ok(await B.js(`document.getElementById('aFirst').value === '' && document.getElementById('aPhone').value === '5125550160' && document.getElementById('aPrior').hidden`), '"Someone else" clears fill and hides card while keeping phone');
 await B.js(`document.getElementById('aClose').click()`);
 if (process.env.TABLE) ok(await B.js(`__xl.writes.includes('table row added') && __xl.tableRows() === ${nr}`), 'rides in an Excel table: the row is added through the table');
 const gus = await until(async () => { const r = await bridge(); return (r.outbox || []).find(o => o.to.endsWith('5550160')); }, 'texting server texts the manual ride');
