@@ -385,8 +385,11 @@ const server = http.createServer(async (req, res) => {
         const token = cleanTok(body.token || conf.token || '');
         if (!/^[A-Za-z0-9_-]{20,128}$/.test(token)) return send(res, 200, { ok: false, error: "That doesn't look like a GroupMe token." });
         try {
-          const gs = await gm('/groups', { token, query: { per_page: 100, omit: 'memberships' } });
-          return send(res, 200, { ok: true, groups: (gs || []).map(g => ({ id: g.id, name: g.name })) });
+          const [me, gs] = await Promise.all([
+            gm('/users/me', { token }).catch(() => null),
+            gm('/groups', { token, query: { per_page: 100, omit: 'memberships' } })
+          ]);
+          return send(res, 200, { ok: true, name: (me && me.name) || '', groups: (gs || []).map(g => ({ id: g.id, name: g.name })) });
         } catch (e) { return send(res, 200, { ok: false, error: String(e.message || e) }); }
       }
       if (p === '/api/config') {

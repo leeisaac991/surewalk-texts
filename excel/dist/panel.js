@@ -845,7 +845,7 @@
       : '<button class="link" id="avConnect">Connect GroupMe</button>';
     if ($('avChange')) $('avChange').onclick = () => showConnect(3);
     if ($('avForget')) $('avForget').onclick = () => { Object.assign(sync, { ready: false, lastId: '', seen: new Set(), pending: [], todo: [], adds: [], err: '' }); S.rides = {};
-      set = Object.assign({}, set, { token: '', groupId: '', groupName: '', sync: false }); ls.set('settings', set); toast('GroupMe token forgotten'); render(); };
+      set = Object.assign({}, set, { token: '', groupId: '', groupName: '', sync: false, name: '' }); ls.set('settings', set); toast('GroupMe token forgotten'); render(); };
     if ($('avConnect')) $('avConnect').onclick = () => showConnect(1);
   }
   $('setSync').addEventListener('click', () => {
@@ -914,16 +914,34 @@
     if (tok.length < 20 || !/^[A-Za-z0-9_-]{20,128}$/.test(tok)) { cg.err = 'That token looks incomplete. Try again.'; return renderConnect(); }
     cg.busy = true; cg.err = ''; renderConnect();
     try {
-      const gs = (await gm('/groups', { per_page: 100, omit: 'memberships' }, null, tok)) || []; // the token works if GroupMe lists its chats
-      cg.token = tok; set = Object.assign({}, set, { token: tok }); ls.set('settings', set);
-      cg.groups = gs.map(g => ({ id: String(g.id), name: g.name, active: Number((g.messages && g.messages.last_message_created_at) || g.updated_at || 0) }));
+      const [me, gs] = await Promise.all([
+        gm('/users/me', null, null, tok).catch(() => null),
+        gm('/groups', { per_page: 100, omit: 'memberships' }, null, tok)
+      ]);
+      const gmParts = String((me && me.name) || '').trim().split(/\s+/).filter(Boolean);
+      const formatted = gmParts.length > 1 ? `${gmParts[0][0].toUpperCase()}. ${gmParts[gmParts.length - 1]}` : (gmParts[0] || '');
+      cg.token = tok;
+      set = Object.assign({}, set, { token: tok, name: formatted || (me && me.name) || set.name || '' });
+      ls.set('settings', set);
+      cg.groups = (gs || []).map(g => ({ id: String(g.id), name: g.name, active: Number((g.messages && g.messages.last_message_created_at) || g.updated_at || 0) }));
       Object.assign(cg, { busy: false, step: 3 });
     } catch (e) { Object.assign(cg, { busy: false, err: 'That token looks incomplete. Try again.' }); }
     renderConnect(); render();
   }
   async function loadChats() {
-    try { const gs = (await gm('/groups', { per_page: 100, omit: 'memberships' }, null, cg.token)) || [];
-      cg.groups = gs.map(g => ({ id: String(g.id), name: g.name, active: Number((g.messages && g.messages.last_message_created_at) || g.updated_at || 0) })); }
+    try {
+      const [me, gs] = await Promise.all([
+        gm('/users/me', null, null, cg.token).catch(() => null),
+        gm('/groups', { per_page: 100, omit: 'memberships' }, null, cg.token)
+      ]);
+      if (me && me.name) {
+        const gmParts = String(me.name).trim().split(/\s+/).filter(Boolean);
+        const formatted = gmParts.length > 1 ? `${gmParts[0][0].toUpperCase()}. ${gmParts[gmParts.length - 1]}` : (gmParts[0] || '');
+        set = Object.assign({}, set, { name: formatted || me.name });
+        ls.set('settings', set);
+      }
+      cg.groups = (gs || []).map(g => ({ id: String(g.id), name: g.name, active: Number((g.messages && g.messages.last_message_created_at) || g.updated_at || 0) }));
+    }
     catch (e) { cg.groups = []; cg.err = e.message || String(e); }
     renderConnect();
   }
@@ -1498,7 +1516,7 @@
     .replace(/^["']|["'];?$/g, '')
     .trim();
 
-  window.SWT = { tick, refresh, get X() { return X; }, get S() { return S; }, sync, undoStack, choose, openCalling, closeCalling, showConnect, cl, cg, api, logEv, get set() { return set; } }; // console / tests
+  window.SWT = { tick, refresh, get X() { return X; }, get S() { return S; }, sync, undoStack, choose, openCalling, closeCalling, showConnect, saveToken, cl, cg, api, logEv, get set() { return set; } }; // console / tests
   if (REMOTE) {
     document.body.classList.add('remote');
     $('calling').hidden = false;

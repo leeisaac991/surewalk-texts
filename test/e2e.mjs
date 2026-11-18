@@ -27,6 +27,7 @@ const gm = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return send(204, '');
   if (u.pathname === '/panel') return send(200, u.searchParams.get('remote') ? callingPage() : panelPage(u.searchParams.get('click')), 'text/html');
   if (u.pathname.startsWith('/files/')) return send(200, fs.readFileSync(path.join(ROOT, u.pathname.slice(7))), 'text/javascript');
+  if (u.pathname === '/v3/users/me') return send(200, { response: { name: 'Test Dispatcher', user_id: '1' } });
   if (u.pathname === '/v3/groups') return send(200, { response: [{ id: 'g1', name: 'SURE Walk Texts sync' }] });
   const m = /^\/v3\/groups\/g1\/messages$/.exec(u.pathname);
   if (!m) return send(404, {});
@@ -156,7 +157,9 @@ const groupsRes = await (await fetch(`http://127.0.0.1:${SPORT}/api/groups`, {
   headers: { 'X-SW-Token': TOKEN, 'Content-Type': 'application/json' },
   body: JSON.stringify({ token: '  Bearer "tok_' + 'c'.repeat(30) + '"  ' })
 })).json();
-ok(groupsRes.ok && groupsRes.groups && groupsRes.groups.length > 0, 'api/groups checks and cleans token without prior config');
+ok(groupsRes.ok && groupsRes.groups && groupsRes.groups.length > 0 && groupsRes.name === 'Test Dispatcher', 'api/groups checks and cleans token and gets name from GroupMe');
+await B.js("SWT.saveToken('tok_" + "d".repeat(30) + "')");
+await until(() => B.js("SWT.set.name === 'T. Dispatcher'"), 'panel saveToken updates name from GroupMe');
 
 console.log('auto-text -> Call Time back in the sheet');
 const first = await until(async () => { const r = await bridge(); return r.outbox && r.outbox.length >= 2 && r.outbox; }, 'confirmations queued for Ava and Ben (Cara is cancelled)');
