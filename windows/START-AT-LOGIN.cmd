@@ -6,7 +6,7 @@ if exist "%LNK%" (
   del "%LNK%"
   echo Start at login is now OFF.
 ) else (
-  (echo @call "%~dp0START-TEXTING.cmd" nobrowser)>"%LNK%"
-  echo Start at login is now ON. If you move this folder, run this twice to update it.
+  (echo @call "%~dp0START-TEXTING.cmd")>"%LNK%"
+  echo Start at login is now ON. Opens the texting dashboard on startup.
 )
 pause

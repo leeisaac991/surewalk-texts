@@ -10,13 +10,10 @@
   <ProviderName>SURE Walk</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="SURE Walk Texts"/>
-  <Description DefaultValue="SURE Walk texting and calling panel for the rides workbook: mark called, cancel, duplicate, places, and GroupMe sync."/>
+  <Description DefaultValue="SURE Walk auto-texting panel for the rides workbook: syncs directly with the texting server on this laptop."/>
   <IconUrl DefaultValue="https://leeisaac991.github.io/surewalk-texts/assets/icon-32.png"/>
   <HighResolutionIconUrl DefaultValue="https://leeisaac991.github.io/surewalk-texts/assets/icon-64.png"/>
   <SupportUrl DefaultValue="https://leeisaac991.github.io/surewalk-texts/taskpane.html"/>
-  <AppDomains>
-    <AppDomain>https://api.groupme.com</AppDomain>
-  </AppDomains>
   <Hosts>
     <Host Name="Workbook"/>
   </Hosts>
@@ -79,7 +76,7 @@
         <bt:String id="Button.Label" DefaultValue="Texts"/>
       </bt:ShortStrings>
       <bt:LongStrings>
-        <bt:String id="Button.Tip" DefaultValue="Open the SURE Walk texting and calling panel."/>
+        <bt:String id="Button.Tip" DefaultValue="Open the SURE Walk auto-texting panel."/>
       </bt:LongStrings>
     </Resources>
   </VersionOverrides>

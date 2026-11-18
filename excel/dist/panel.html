@@ -236,43 +236,33 @@
   .toast button { border: 0; background: transparent; color: #ffb27a; font-weight: 700; }
 </style>
 
-<!-- ======================= the side panel (3a launcher) ======================= -->
-<div class="sb" id="home">
-  <div class="sbh">
+<!-- ======================= the side panel: Auto-text (straight to business) ======================= -->
+<div class="av" id="auto">
+  <div class="avh">
     <span class="brand">SURE Walk</span>
-    <span class="syncl" id="syncLbl" title="Sync"><span class="dot" id="syncDot"></span><span id="syncTxt">Sync off</span></span>
+    <span class="syncl" id="syncLbl" title="Sync with this laptop"><span class="dot" id="syncDot"></span><span id="syncTxt">Sync off</span></span>
     <span class="sp"></span>
+    <button class="sw" id="setSync" role="switch" aria-checked="false" aria-label="Auto-text new riders"></button>
     <button class="ib" id="restartBtn" title="Restart the panel (reloads it with the newest version)" aria-label="Restart the panel">↻</button>
     <button class="ib" id="setBtn" title="Settings" aria-label="Settings">⚙</button>
-  </div>
-  <button class="launch" id="openCalling" type="button" aria-label="Open Calling">
-    <span class="lc-n" id="lcN">–</span>
-    <span class="lc-sub">to call</span>
-    <span class="lc-next" id="lcNext"></span>
-    <span id="lcWait"></span>
-    <span class="lc-err" id="lcErr" hidden></span>
-    <span class="lc-btn">Open Calling ↗</span>
-  </button>
-  <button class="abar" id="autoBar" type="button"><span class="dot" id="abDot"></span><span>Auto-text <b id="abState">off</b></span><span class="sp"></span><span class="muted">›</span></button>
-</div>
-
-<!-- ======================= the side panel (3c Auto-text) ======================= -->
-<div class="av" id="auto" hidden>
-  <div class="avh">
-    <button class="ib" id="autoBack" aria-label="Back">‹</button>
-    <b>Auto-text</b><span class="sp"></span>
-    <button class="sw" id="setSync" role="switch" aria-checked="false" aria-label="Auto-text new riders"></button>
   </div>
   <div class="avs"><span class="dot" id="avDot"></span><b id="avState">Off</b><span class="muted small" id="avSeen">Not sending</span></div>
   <div class="avg" id="avGm"></div>
   <div class="avl">Log</div>
   <div class="logc" id="feed"><div class="lg"><span></span><span class="muted small">Nothing yet.</span><span></span></div></div>
-  <div class="avf">Test texts and polls: open the texting dashboard at <a href="http://127.0.0.1:8787" target="_blank" rel="noopener">http://127.0.0.1:8787</a> on the texting PC.</div>
+  <div class="avf">Test texts and polls: open the texting dashboard at <a href="http://127.0.0.1:8787" target="_blank" rel="noopener">http://127.0.0.1:8787</a> on this laptop.</div>
 </div>
 
-<!-- ======================= Connect GroupMe (2a) ======================= -->
-<div class="cg" id="connect" role="dialog" aria-modal="true" aria-label="Connect sync" hidden>
-  <div class="avh"><button class="ib" id="cgBack" aria-label="Back">‹</button><b>Auto-text</b></div>
+<div class="sb" id="home" hidden>
+  <button id="autoBack" hidden></button>
+  <button id="openCalling" hidden></button>
+  <span id="lcN"></span><span id="lcNext"></span><span id="lcWait"></span><span id="lcErr"></span>
+  <button id="autoBar" hidden><span id="abDot"></span><span id="abState"></span></button>
+</div>
+
+<!-- ======================= Connect to this laptop ======================= -->
+<div class="cg" id="connect" role="dialog" aria-modal="true" aria-label="Connect to this laptop" hidden>
+  <div class="avh"><button class="ib" id="cgBack" aria-label="Close">✕</button><b>Connect to this laptop</b></div>
   <div class="cgb" id="cgBody"></div>
 </div>
 

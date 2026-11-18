@@ -66,7 +66,7 @@ Lnk 'Start at login (on or off)' (Join-Path $Dest 'START-AT-LOGIN.cmd') '' 'Turn
 Lnk "Uninstall $Name" $ps "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $Dest 'app\windows\install.ps1')`" -Uninstall" "Remove $Name"
 
 if (-not $atLogin -and (Ask 'Start SURE Walk Texts automatically when you log in?')) { $atLogin = $true }
-if ($atLogin) { [IO.File]::WriteAllText($StartupFile, "@call `"$(Join-Path $Dest 'START-TEXTING.cmd')`" nobrowser`r`n") }
+if ($atLogin) { [IO.File]::WriteAllText($StartupFile, "@call `"$(Join-Path $Dest 'START-TEXTING.cmd')`"`r`n") }
 
 $ver = ''; try { $ver = (Get-Content -Raw (Join-Path $Dest 'VERSION')).Trim() } catch {}
 "$Name $ver installed in $Dest"

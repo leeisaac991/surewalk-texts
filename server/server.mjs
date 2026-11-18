@@ -379,6 +379,8 @@ const send = (res, code, body, type = 'application/json; charset=utf-8', extra =
   res.end(typeof body === 'string' ? body : JSON.stringify(body));
 };
 
+const FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#bf5700"/><path d="M7 9.5C7 8.12 8.12 7 9.5 7h13c1.38 0 2.5 1.12 2.5 2.5v9c0 1.38-1.12 2.5-2.5 2.5H13l-4.5 3.5v-3.5H9.5C8.12 21 7 19.88 7 18.5v-9z" fill="#ffffff"/><circle cx="11.5" cy="14" r="1.5" fill="#bf5700"/><circle cx="16" cy="14" r="1.5" fill="#bf5700"/><circle cx="20.5" cy="14" r="1.5" fill="#bf5700"/></svg>`;
+
 function dashboardHtml() {
   const shim = fs.readFileSync(path.join(HERE, 'shim.js'), 'utf8').replace('__TOKEN__', TOKEN).replace("'__LEGACY__'", WIN ? 'false' : 'true');
   return fs.readFileSync(path.join(GS, 'Dashboard.html'), 'utf8')
@@ -473,6 +475,7 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, out.getContent());
     }
     if (req.method === 'GET' && (p === '/' || p === '/index.html')) return send(res, 200, dashboardHtml(), 'text/html; charset=utf-8');
+    if (req.method === 'GET' && (p === '/favicon.ico' || p === '/favicon.svg')) return send(res, 200, FAVICON_SVG, 'image/svg+xml; charset=utf-8');
     if (req.method === 'GET' && p === '/setup') return send(res, 200, fs.readFileSync(path.join(HERE, 'setup.html'), 'utf8').replace('__TOKEN__', TOKEN), 'text/html; charset=utf-8');
     if (req.method === 'GET' && p === '/log.csv') {
       const head = 'Time,Night,Direction,Phone,Ride ID,Row,Name,Text,Status,Intent,Note\n';
