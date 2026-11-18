@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Builds SURE-Walk-Texts-Windows.zip: copy it to the laptop, extract, double-click START-TEXTING.cmd.
 #   windows/pack.sh [out dir]      (default: dist/ in this repo, which git ignores)
+# Env: VERSION     = release number written to VERSION (default: today, e.g. 2026.11.18)
 # Env: SUREWALK_GS = the .gs folder (default ~/Documents/surewalk/texting/apps-script)
 #      NODE_ZIP    = a node-v*-win-x64.zip to include (default: download the current LTS and check its SHA-256)
 # The zip holds code only - no settings, keys, message logs or GroupMe token.
@@ -12,7 +13,8 @@ W="$(mktemp -d)"; trap 'rm -rf "$W"' EXIT
 D="$W/$NAME"; mkdir -p "$D/app/texts-panel/server" "$D/app/apps-script" "$D/app/windows/test"
 
 cp "$HERE"/*.cmd "$HERE/README.txt" "$D/"
-cp "$HERE/bridge.ps1" "$D/app/windows/"; cp "$HERE"/test/*.mjs "$D/app/windows/test/"
+cp "$HERE"/{bridge,install,update}.ps1 "$D/app/windows/"
+echo "${VERSION:-$(date +%Y.%m.%d)}" > "$D/VERSION"; cp "$HERE"/test/*.mjs "$D/app/windows/test/"
 cp "$ROOT/protocol.js" "$D/app/texts-panel/"
 cp "$ROOT"/server/{server.mjs,gas.js,shim.js,setup.html} "$D/app/texts-panel/server/"
 for f in Build.gs Places.gs Rides.gs Texts.gs Bridge.gs Code.gs Dashboard.html; do
@@ -33,4 +35,5 @@ find "$D" -name '*.cmd' -o -name '*.txt' | while read -r f; do sed -i 's/\r*$/\r
 
 mkdir -p "$OUT"; rm -f "$OUT/$NAME.zip"
 (cd "$W" && zip -qr -X "$OUT/$NAME.zip" "$NAME")
-echo "Built $OUT/$NAME.zip ($(du -h "$OUT/$NAME.zip" | cut -f1))"
+(cd "$OUT" && sha256sum "$NAME.zip" > "$NAME.zip.sha256")
+echo "Built $OUT/$NAME.zip ($(du -h "$OUT/$NAME.zip" | cut -f1)), version $(cat "$D/VERSION")"

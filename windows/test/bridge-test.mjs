@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { fakePhone } from './fake-phone.mjs';
+import { fakePhone, fakeAg } from './fake-phone.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..');
@@ -132,6 +132,25 @@ fs.writeFileSync(path.join(B2, 'config.json'), JSON.stringify({ url: `http://127
 const br2 = startBridge(B2, PPORT + 10);
 await until(() => /Show Notifications ON/.test(read(path.join(B2, 'bridge.log'))), 'a phone that refuses access gets a clear fix in the log');
 br2.kill(); await ph2.close(); await ph.close();
+
+console.log('calling');
+const run = args => new Promise(res => { const p = spawn(PS, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(ROOT, 'windows', 'bridge.ps1'), ...args], { stdio: ['ignore', 'pipe', 'pipe'] }); let o = ''; p.stdout.on('data', d => o += d); p.stderr.on('data', d => o += d); p.on('exit', code => res({ code, out: o })); });
+const ag = await fakeAg({ port: PPORT + 20 });
+const B3 = path.join(TMP, 'bridge3'); fs.mkdirSync(B3);
+let r = await run(['-DialOnce', '(512) 555-0110', '-TestHfpTcp', `127.0.0.1:${PPORT + 20}`, '-StateDir', B3]);
+ok(r.code === 0 && ag.dialed[0] === '5125550110', 'TEST-CALL: the iPhone is asked to dial the number (punctuation removed)');
+ok(['AT+BRSF=0', 'AT+CIND=?', 'AT+CIND?', 'AT+CMER=3,0,0,1'].every((c, i) => ag.commands[i] === c), 'calling link set up the way a car does, before dialing');
+ok(ag.sockets.size === 0 || await (async () => { await sleep(500); return ag.sockets.size === 0; })(), 'the bridge lets go of the call right after dialing (audio stays on the iPhone)');
+ok(!/5125550110/.test(read(path.join(B3, 'bridge.log'))), 'the dialed number is not written to the log');
+r = await run(['-DialOnce', 'not-a-number', '-TestHfpTcp', `127.0.0.1:${PPORT + 20}`, '-StateDir', B3]);
+ok(r.code === 1 && ag.dialed.length === 1, 'a bad number is never dialed');
+await ag.close();
+const ag2 = await fakeAg({ port: PPORT + 21, refuseDial: true });
+r = await run(['-DialOnce', '+15125550111', '-TestHfpTcp', `127.0.0.1:${PPORT + 21}`, '-StateDir', B3]);
+ok(r.code === 1 && /would not dial/.test(read(path.join(B3, 'bridge.log'))), 'a refused dial is reported');
+await ag2.close();
+r = await run(['-DialOnce', '+15125550112', '-TestHfpTcp', `127.0.0.1:${PPORT + 22}`, '-StateDir', B3]);
+ok(r.code === 1, 'no calling link (phone away) fails cleanly');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 cleanup();
