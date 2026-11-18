@@ -144,6 +144,7 @@ const rideOf = async id => (await rpc('getState')).rides.find(r => r.phone10 ===
 
 console.log('server + panel');
 ok(page.includes('google.script.run') || page.includes('window.google'), 'dashboard served with the local google.script.run');
+ok(page.includes("var LEGACY = true;") === (process.platform !== 'win32'), 'Linux: the dashboard is marked LINUX · DEPRECATED (Windows is the main program)');
 await rpc('setToggle', 'TX_AUTOTEXT', true); // before any ride arrives (rides seen while it's off are never auto-texted)
 const B = await browser();
 const sees = async () => (await rpc('getState')).rides.length;

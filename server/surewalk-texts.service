@@ -1,9 +1,10 @@
+# DEPRECATED: Linux backup only. SURE Walk Texts runs on Windows now (windows/START-TEXTING.cmd).
 # systemd --user unit for the SURE Walk Texts server.
 # Install: cp surewalk-texts.service ~/.config/systemd/user/ && systemctl --user daemon-reload
 # Start for a shift: systemctl --user start surewalk-texts    Stop: systemctl --user stop surewalk-texts
 # Logs: journalctl --user -u surewalk-texts -f
 [Unit]
-Description=SURE Walk Texts server (dashboard on http://127.0.0.1:8787, GroupMe sync, phone bridge endpoint)
+Description=SURE Walk Texts server — DEPRECATED Linux backup (dashboard on http://127.0.0.1:8787, GroupMe sync, phone bridge endpoint)
 After=network-online.target
 
 [Service]

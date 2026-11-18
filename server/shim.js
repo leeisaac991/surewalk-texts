@@ -179,6 +179,20 @@
       if (a.state === 'lost') say(a.first + "'s ride never made it into the sheet — is an Excel panel open with GroupMe sync on? Add it in Excel.", 'warn');
     });
   }
-  function tick() { addButton(); pill(); post('/api/status').then(watchAdds).catch(function () {}); }
+  // Running on the old Linux texting computer: Windows is the main program now. A strip at the top says so, and
+  // the tab title is marked, so nobody mistakes this for the computer that should be texting.
+  var LEGACY = '__LEGACY__';
+  function legacy() {
+    if (LEGACY !== true || document.getElementById('swLegacy')) return;
+    var b = document.createElement('div');
+    b.id = 'swLegacy'; b.setAttribute('role', 'status');
+    b.style.cssText = 'position:sticky;top:0;z-index:1000;display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap;' +
+      'padding:6px 16px;font:600 12.5px/1.35 system-ui,sans-serif;text-align:center;background:repeating-linear-gradient(135deg,#6b6b70 0 12px,#5f5f64 12px 24px);color:#fff';
+    b.innerHTML = '<span style="background:#fff;color:#4a4a4f;border-radius:4px;padding:1px 7px;font-weight:800;letter-spacing:.04em">LINUX · DEPRECATED</span>' +
+      '<span>This is the old Linux version, kept as a backup. SURE Walk Texts now runs on the <b>Windows laptop</b> (START-TEXTING.cmd) — only one computer may text at a time.</span>';
+    document.body.insertBefore(b, document.body.firstChild);
+    if (!/^\[Linux/.test(document.title)) document.title = '[Linux – deprecated] ' + document.title;
+  }
+  function tick() { legacy(); addButton(); pill(); post('/api/status').then(watchAdds).catch(function () {}); }
   document.addEventListener('DOMContentLoaded', function () { tick(); setInterval(tick, 5000); });
 })();
