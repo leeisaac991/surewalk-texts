@@ -98,12 +98,12 @@
     return `${day} ${pad(mt[1])}:${mt[2]}:00`;
   }
   const letter = n => { let s = ''; while (n) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; };
-  // The ride's key: 'f' + the form's Id, or (no Id: a row added by hand) its time + the phone's last 4 digits.
-  function rideId(col, v, t, ts) {
+  // The ride's key: 'f' + the form's Id, or (no Id: a row added by hand) its time + the phone's last 4 digits (+ row).
+  function rideId(col, v, t, ts, row) {
     const idv = col.id ? String(v[col.id - 1] == null ? '' : v[col.id - 1]).trim() : '';
     if (idv) return 'f' + idv;
     const ph = String(t[col.phone - 1] == null ? '' : t[col.phone - 1]).replace(/\D/g, ''), fi = String(t[col.first - 1] || '').trim().toLowerCase();
-    return 't' + ts.replace(/\D/g, '') + (ph.slice(-4) || fi);
+    return 't' + ts.replace(/\D/g, '') + (ph.slice(-4) || fi) + (row ? 'r' + row : '');
   }
   const RIDE_FIELDS = ['first', 'last', 'phone', 'pu', 'do', 'ada', 'eid', 'email', 'disp', 'call', 'arr', 'loc', 'van', 'drv', 'nav', 'rsn', 'txs'];
 
@@ -236,7 +236,7 @@
         if (/^#+$/.test(f.phone)) f.phone = String(v[col.phone - 1]);
         f.bg = rowColor(cells, rideCols);
         if (/^#+$/.test(String(t[col.phone - 1]))) t[col.phone - 1] = f.phone;
-        const id = rideId(col, v, t, ts);
+        const id = rideId(col, v, t, ts, top + i);
         rides.push({ id, row: top + i, f, cells, notes: get('notes') });
       }
       await syncPastRides(ctx, allTabList);
@@ -956,9 +956,10 @@
     $('cWait').innerHTML = waitChip();
     $('cPills').innerHTML = [['new', 'To call'], ['called', 'Called'], ['all', 'All']].map(([k, l]) => `<button role="tab" data-f="${k}" class="${cl.filter === k ? 'on' : ''}" aria-selected="${cl.filter === k}">${l} ${counts[k]}</button>`).join('');
     if (cl.sel && !rides.some(r => r.id === cl.sel) && !(X && X.byId.get(cl.sel) && cl.filter === 'all')) { /* keep the selected ride shown even if it left the filter */ }
+    const multiBadge = r => { const d = digits10(r.f.phone); return d && X && X.tonight.filter(x => digits10(x.f.phone) === d).length > 1 ? '<span class="chip-m" title="Multiple rides tonight with this phone">multi</span>' : ''; };
     $('list').innerHTML = rides.slice(0, 200).map(r => `<button class="crow ${r.id === cl.sel ? 'sel' : ''}" data-id="${esc(r.id)}">
         <span class="t tab">${esc(timeOf(r))}</span>
-        <span style="min-width:0"><span class="n"><span class="nm">${esc(who(r.f))}</span>${gBadge(r)}</span><span class="r" style="display:block">${esc(r.f.pu)} → ${esc(r.f.do)}</span></span>
+        <span style="min-width:0"><span class="n"><span class="nm">${esc(who(r.f))}</span>${gBadge(r)}${multiBadge(r)}</span><span class="r" style="display:block">${esc(r.f.pu)} → ${esc(r.f.do)}</span></span>
         ${statusChip(r)}</button>`).join('') || '<div class="cempty">Nothing here.</div>';
     $('calling').classList.toggle('has-sel', !!cl.sel);
     renderDetail(force);
@@ -977,6 +978,7 @@
       return;
     }
     const f = r.f, open = isOpen(r), ada = /yes/i.test(f.ada), L = groupOf(r), d = digits10(f.phone);
+    const samePhone = d ? X.tonight.filter(x => x.id !== r.id && digits10(x.f.phone) === d) : [];
     const others = X.tonight.filter(x => x.id !== r.id && isOpen(x) && (!L || groupOf(x) !== L))
       .sort((a, b) => (a.f.pu.toLowerCase() === f.pu.toLowerCase() ? 0 : 1) - (b.f.pu.toLowerCase() === f.pu.toLowerCase() ? 0 : 1) || (a.f.ts < b.f.ts ? 1 : -1));
     const routeCard = (k, label) => cl.editing ? `<div class="rcard ed"><small>${label}</small><input id="${k === 'pu' ? 'cPu' : 'cDo'}" value="${esc(f[k])}" aria-label="${label}" autocomplete="off"></div>`
@@ -984,6 +986,7 @@
     box.innerHTML = `<button class="link cback" data-a="back">‹ List</button>
       <div class="chead"><h2 id="cName">${esc(who(f))}</h2>${statusChip(r)}${ada ? '<span class="pill-ada">ADA</span>' : ''}</div>
       <div class="csub">Submitted ${esc(timeOf(r))} · row ${r.row}</div>
+      ${samePhone.length ? `<div class="cnote warn" style="background:rgba(255,149,0,.15);color:#c93400;margin-top:6px;padding:6px 10px;border-radius:8px;font-size:12.5px">⚠️ Note: ${samePhone.length} other ride${samePhone.length > 1 ? 's' : ''} tonight with this phone: ${samePhone.map(x => `<button class="link" data-a="pickRide" data-id="${x.id}" style="font-weight:700">row ${x.row} (${isOpen(x) ? 'open' : statusText(x)})</button>`).join(', ')}</div>` : ''}
       <div class="phone"><a class="tel" href="tel:+1${d}">${esc(fmtPhone(f.phone))}</a>
         <button class="btn" data-a="copy">${cl.copied === r.id ? 'Copied' : 'Copy'}</button>
         ${open ? `<button class="btn primary" data-a="called">${f.call || f.disp ? 'Called again' : 'Mark called'}</button>` : ''}</div>
@@ -1040,6 +1043,7 @@
     const n = r && who2(r.f), id = r && r.id;
     cl.prevIds = visibleRides().map(x => x.id);
     if (a === 'back') { cl.sel = null; return renderCalling(true); }
+    if (a === 'pickRide') return choose(btn.dataset.id, true);
     if (a === 'copy') { const t = fmtPhone(r.f.phone); (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).catch(() => {}); cl.copied = id; return renderDetail(true); }
     if (a === 'called') { const again = !!(r.f.call || r.f.disp); return run(() => api('called', id), () => { toast(again ? `Called ${n} again` : `Marked ${n} called`, true); if (!again) advance(id); else renderCalling(true); }, btn); }
     if (a === 'route') { if (!isOpen(r)) return; cl.editing = btn.dataset.which || 'pu'; return renderDetail(true); }
