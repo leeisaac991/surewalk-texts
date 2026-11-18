@@ -451,6 +451,63 @@ await B.js(`SWT.cl.filter = 'all'; SWT.choose(${JSON.stringify(joId)}, false), 1
 await B.js(`document.querySelector('#selRide [data-a=notAda]').click(), 1`);
 await until(() => B.js(`__xl.text(${joRow},'${ADA}') === 'No'`), 'Mark not ADA: the ADA cell becomes No');
 
+console.log('👥 group rides by text: same pickup soon after each other -> asked who they ride with');
+{
+  const P = { max: '5125550190', nia: '5125550191', oli: '5125550192' };
+  const top = (await B.js(`Math.max(...SWT.X.rides.map(r => r.row))`)) + 1;
+  await B.js(`__xl.row(${top}, ${JSON.stringify(ride(40, 0, 'Max', 'Grp', P.max, 'Gregory Gym', 'Kins'))})`);
+  await B.js(`__xl.row(${top + 1}, ${JSON.stringify(ride(41, 0, 'Nia', 'Grp', P.nia, 'Gregory Gym', 'Kins'))})`);
+  await B.js(`__xl.row(${top + 2}, ${JSON.stringify(ride(42, 0, 'Oli', 'Grp', P.oli, 'Gregory Gym', 'PCL'))})`);
+  const got = {}; // phone -> [bodies] since the last take
+  const pump = async (inbound = []) => { const r = await bridge(inbound); const out = r.outbox || []; out.forEach(o => { const k = o.to.slice(-10); (got[k] = got[k] || []).push(o.body); }); if (out.length) await bridge([], out.map(o => ({ outId: o.outId, status: 'sent' }))); return out; };
+  const take = k => { const b = got[k] || []; got[k] = []; return b; };
+  await until(async () => { await pump(); return Object.values(P).every(k => (got[k] || []).length); }, 'Max, Nia and Oli get their confirmation texts');
+  Object.values(P).forEach(take);
+  let ts = NOW + 600e3;
+  const say = async (k, text) => { await pump([{ id: 'gr' + ts, from: '+1' + k, text, ts: ts += 1000 }]); await sleep(300); await pump(); return take(k); };
+  const mx = await say(P.max, 'yes');
+  ok(mx.length === 1 && /you're confirmed/i.test(mx[0]) && /Reply with their first names/.test(mx[0]), 'Max says YES: one text, "you\'re confirmed" + who are you riding with? (same route as Nia)');
+  ok(!/Nia|Oli/.test(mx.join(' ')), 'the question names no other rider');
+  const ol = await say(P.oli, 'yes');
+  ok(ol.length === 1 && /Going with friends\?/.test(ol[0]) && !/Max|Nia/.test(ol[0]), 'Oli (same pickup, other drop-off) gets the softer hint');
+  const mx2 = await say(P.max, 'nia');
+  ok(mx2.length === 1 && /you and Nia/.test(mx2[0]), 'Max answers "nia": grouped, told "you and Nia"');
+  let st = await rpc('getState');
+  const g1 = (st.rides.find(r => r.phone10 === P.max) || {}).group;
+  ok(g1 && g1.members.length === 2 && !g1.both && g1.members.some(m => m.first === 'Nia'), 'dashboard: Max is grouped with Nia, one side so far');
+  const mrow = top, nrow = top + 1;
+  const L1 = C.txs ? await until(() => B.js(`(() => { const a = __xl.text(${mrow},'${C.txs}'), b = __xl.text(${nrow},'${C.txs}'); const m = /^\\d{1,2}:\\d{2} · Group ([A-H])$/.exec(a); return m && b === 'Group ' + m[1] && m[1]; })()`), 'Confirmed column: Max "H:MM · Group X", Nia (not confirmed yet) "Group X"') : 'x';
+  const ni = await say(P.nia, "Okay - I'm with Max");
+  ok(ni.length === 1 && /you're confirmed/i.test(ni[0]) && /you and Max/.test(ni[0]), 'Nia: "Okay - I\'m with Max" = a YES; one text, confirmed + grouped');
+  st = await rpc('getState');
+  const g2 = (st.rides.find(r => r.phone10 === P.nia) || {}).group;
+  ok(g2 && g2.both && g2.letter && (!C.txs || g2.letter === L1), `dashboard: they named each other (Group ${g2 && g2.letter})`);
+  ok(!st.flags.some(f => ['Confirmed + more', 'Reply', 'Group?'].includes(f.kind) && [P.max, P.nia].includes(f.phone)), 'no flags for Max or Nia');
+  if (C.txs) await until(() => B.js(`/^\\d{1,2}:\\d{2} · Group ${L1}$/.test(__xl.text(${nrow},'${C.txs}'))`), 'Nia\'s Confirmed cell gets her time next to the group');
+  const o2 = await say(P.oli, 'no just me');
+  st = await rpc('getState');
+  ok(o2.length === 0 && !st.flags.some(f => f.phone === P.oli), 'Oli: "no just me" = riding alone: no "reply CANCEL" text, no flag');
+  ok(!(st.rides.find(r => r.phone10 === P.oli) || {}).group && (st.rides.find(r => r.phone10 === P.oli) || {}).state === 'confirmed', 'Oli stays confirmed and ungrouped');
+  // names that don't fit -> a "Group?" flag for the dispatcher, nobody grouped
+  const Q = { quinn: '5125550193', rae: '5125550194' }, qtop = top + 3;
+  await B.js(`__xl.row(${qtop}, ${JSON.stringify(ride(43, 0, 'Quinn', 'Grp', Q.quinn, 'Gregory Gym', 'Kins'))})`);
+  await B.js(`__xl.row(${qtop + 1}, ${JSON.stringify(ride(44, 0, 'Rae', 'Grp', Q.rae, 'Gregory Gym', 'PCL'))})`);
+  await until(async () => { await pump(); return Object.values(Q).every(k => (got[k] || []).length); }, 'Quinn and Rae get their confirmation texts');
+  Object.values(Q).forEach(take);
+  ok(/Reply with their first names/.test((await say(Q.quinn, 'yes')).join(' ')), 'Quinn says YES and is asked too');
+  await say(Q.quinn, 'Oli');
+  st = await rpc('getState');
+  ok(st.flags.some(f => f.kind === 'Group?' && f.phone === Q.quinn && /riding alone/.test(f.note)) && !(st.rides.find(r => r.phone10 === Q.quinn) || {}).group, 'Quinn names Oli, who said "just me": flagged, not grouped');
+  await say(Q.rae, 'yes');
+  const rz = await say(Q.rae, 'me and zed');
+  st = await rpc('getState');
+  ok(rz.length === 0 && st.flags.some(f => f.kind === 'Group?' && f.phone === Q.rae && /zed/.test(f.note)), 'Rae names "Zed", who has no ride: flagged, no text back');
+  if (C.txs) { // a dispatcher removes Max from the group in the sheet: the texting computer doesn't put it back
+    await B.js(`__xl.type(${mrow}, '${C.txs}', '')`); await sleep(2500); await pump(); await sleep(1500);
+    ok(await B.js(`/^\\d{1,2}:\\d{2}$/.test(__xl.text(${mrow},'${C.txs}'))`), 'the group letter is written once: a dispatcher\'s change in the sheet stands (only the YES time comes back)');
+  }
+}
+
 console.log('Calling in its own window (Excel dialog stand-in): the side panel does the sheet work');
 await B.js(`(() => {
   SWT.closeCalling(); window.__SWT_HOSTED = true; window.SWT_TEST.callingUrl = '/panel?remote=1';

@@ -537,18 +537,18 @@
   // The texting computer's edits -> the sheet, only where the cell still holds what it saw (a dispatcher's edit wins).
   async function applyServer() {
     const todo = sync.todo.splice(0);
-    const work = [];
+    const work = [], byRide = new Map(); // several edits to one ride in this batch: each builds on the one before
     todo.forEach(ev => {
       const r = X.byId.get(ev.id);
       if (!r) return;
-      const ch = {}, skipped = [];
+      const prev = byRide.get(r) || null, ch = {}, skipped = [];
       Object.keys(ev.f).forEach(k => {
         if (k === 'row' || k === 'ts') return;
-        const want = ev.f[k], cur = r.f[k];
+        const want = ev.f[k], cur = prev && k in prev.ch ? prev.ch[k] : r.f[k];
         if (SWP.same(k, cur, want)) return;
         if (ev.was && k in ev.was && SWP.same(k, cur, ev.was[k])) ch[k] = want; else skipped.push(k);
       });
-      if (Object.keys(ch).length) work.push({ r, ch });
+      if (Object.keys(ch).length) { if (prev) Object.assign(prev.ch, ch); else { const w = { r, ch }; work.push(w); byRide.set(r, w); } }
       if (skipped.length) logEv('bad', `Kept the sheet's ${skipped.join(', ')} · ${who(r.f)}`, 'Changed here first');
     });
     if (!work.length) return;

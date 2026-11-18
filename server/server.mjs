@@ -238,7 +238,38 @@ function syncTextStatus() {
     const want = cfJoin(t, cfGroup(r.f.txs));
     if (!SWP.same('txs', r.f.txs, want)) gas.setField(r.id, 'txs', want);
   });
+  syncGroups(tx, byRow);
 }
+// 👥 Riders the texting code grouped (they named each other by text, Texts.gs groupReply_): give the group a letter
+// (one a member already has in the sheet, else the first one free tonight) and write "Group X" into each rider's
+// Confirmed cell ONCE — after that the sheet wins, so a dispatcher can move or remove them in the calling panel.
+function syncGroups(tx, byRow) {
+  const groups = (tx.groups || []).filter(g => g.rides.length > 1);
+  if (!groups.length) return;
+  const rideOf = id => { const rec = tx.rides[id]; return rec && (byRow[rec.row] || []).find(x => String(x.f.phone || '').replace(/\D/g, '').slice(-10) === rec.phone10); };
+  const used = new Set();
+  Object.values(tx.rides).forEach(rec => (byRow[rec.row] || []).forEach(x => { const L = cfGroup(x.f.txs); if (L) used.add(L); }));
+  groups.forEach(g => { if (g.letter) used.add(g.letter); });
+  let changed = false;
+  groups.forEach(g => {
+    g.wrote = g.wrote || {};
+    if (!g.letter) {
+      const have = g.rides.map(id => { const r = rideOf(id); return r && cfGroup(r.f.txs); }).find(Boolean);
+      g.letter = have || 'ABCDEFGH'.split('').find(L => !used.has(L)) || '';
+      if (!g.letter) return log('groups: no free letter (A–H all used tonight)');
+      used.add(g.letter); changed = true;
+    }
+    g.rides.forEach(id => {
+      if (g.wrote[id]) return;
+      const r = rideOf(id);
+      if (!r) return;
+      if (!cfGroup(r.f.txs)) gas.setField(r.id, 'txs', cfJoin(cfTime(r.f.txs), g.letter));
+      g.wrote[id] = true; changed = true; // (already in a group in the sheet: the dispatcher's choice stands)
+    });
+  });
+  if (changed && typeof globalThis.saveTx_ === 'function') globalThis.saveTx_(tx);
+}
+const cfTime = s => (/^\s*(\d{1,2}:\d{2})/.exec(String(s || '')) || [])[1] || '';
 
 /* ---------------- running the texting code ---------------- */
 function run(fn) { // every entry into the .gs code: then the Confirmed times, ship its sheet edits and save
