@@ -374,6 +374,14 @@ if (jrow) {
   ok(await B.js(`!document.getElementById('cName') || !document.getElementById('cName').textContent.includes('Jo ')`), "the dispatcher's selection isn't changed");
 }
 await until(async () => { const s = await (await fetch(`http://127.0.0.1:${SPORT}/api/status`, { method: 'POST', headers: { 'X-SW-Token': TOKEN } })).json(); return (s.adds || []).some(a => a.id === ja.id && a.state === 'added' && +a.row === jrow); }, 'server status: the add shows as added, with its row');
+console.log('＋ Ride phone lookup on the dashboard');
+const lookupApi = async b => (await fetch(`http://127.0.0.1:${SPORT}/api/lookupRider`, { method: 'POST', headers: { 'X-SW-Token': TOKEN, 'Content-Type': 'application/json' }, body: JSON.stringify(b) })).json();
+const lk = await until(async () => { const r = await lookupApi({ phone: '(512) 555-0170' }); return r.rides ? r : null; }, 'lookup finds Jo by a formatted phone');
+ok(lk && lk.names.length === 1 && lk.names[0].first === 'Jo' && lk.names[0].last === 'Desk' && lk.names[0].count === 1, 'lookup: one name, Jo Desk, 1 ride');
+ok(lk && lk.eid === 'jd1' && lk.email === 'jo.desk@utexas.edu' && lk.ada === true, 'lookup: EID, email and ADA from the ＋ Ride record ' + JSON.stringify(lk && [lk.eid, lk.email, lk.ada, lk.eids]));
+ok(lk && lk.routes[0] && lk.routes[0].pu === 'Welch Hall' && lk.routes[0].do === 'Dobie', 'lookup: recent trip Welch Hall → Dobie');
+ok(lk && !lk.optOut && !lk.noShows && lk.eids === 1, 'lookup: no warnings');
+ok((await lookupApi({ phone: '15125550170' })).rides === lk.rides && (await lookupApi({ phone: '512555017' })).rides === 0 && (await lookupApi({ phone: '5125554321' })).rides === 0, 'lookup: leading 1 ok; 9 digits / unknown number -> nothing ' + JSON.stringify([(await lookupApi({ phone: '15125550170' })).rides, (await lookupApi({ phone: '512555017' })).rides, (await lookupApi({ phone: '5125554321' })).rides]));
 const jt = await until(async () => { const r = await bridge(); return (r.outbox || []).find(o => o.to.endsWith('5550170')); }, 'the dashboard\'s ride gets its confirmation text');
 await bridge([], jt ? [{ outId: jt.outId, status: 'sent' }] : []);
 ok(/already has an open ride/.test((await addApi({ first: 'Jo', phone: '5125550170', pu: 'PCL', do: 'Kins' })).dup || ''), 'same phone open tonight: the dashboard is asked first');
