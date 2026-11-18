@@ -38,10 +38,12 @@ $tmp = Join-Path ([IO.Path]::GetTempPath()) ("surewalk-update-" + [guid]::NewGui
 $null = New-Item -ItemType Directory -Path $tmp
 try {
   $zf = Join-Path $tmp $Asset
+  $sf = Join-Path $tmp "$Asset.sha256"
   Invoke-WebRequest -Uri $zip.browser_download_url -OutFile $zf -Headers @{ 'User-Agent' = 'surewalk-texts-updater' } -UseBasicParsing
-  $want = ((Invoke-WebRequest -Uri $sum.browser_download_url -Headers @{ 'User-Agent' = 'surewalk-texts-updater' } -UseBasicParsing).Content -split '\s+')[0].Trim().ToLower()
+  Invoke-WebRequest -Uri $sum.browser_download_url -OutFile $sf -Headers @{ 'User-Agent' = 'surewalk-texts-updater' } -UseBasicParsing
+  $want = ((Get-Content -Raw $sf) -split '\s+')[0].Trim().ToLower()
   $got = (Get-FileHash -Algorithm SHA256 $zf).Hash.ToLower()
-  if ($want -ne $got) { 'The download did not match its checksum - nothing was changed.'; exit 1 }
+  if ($want -ne $got) { "The download did not match its checksum (expected $want, got $got) - nothing was changed."; exit 1 }
   tar -xf $zf -C $tmp
   if ($LASTEXITCODE) { 'Could not unpack the update - nothing was changed.'; exit 1 }
   $inst = Join-Path $tmp 'SURE-Walk-Texts-Windows\app\windows\install.ps1'
