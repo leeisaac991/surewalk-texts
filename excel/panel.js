@@ -13,6 +13,9 @@
   const T = window.SWT_TEST || {}; // tests only
   const READ_COLS = 30, SCAN_ROWS = 400, TICK_MS = T.tick || 4000, POST_GAP_MS = T.gap || 1500;
   const GM = T.gm || 'https://api.groupme.com/v3';
+  // Sync "via this laptop": the texting server on this computer stands in for the GroupMe chat (same API, a laptop key
+  // instead of a GroupMe token, nothing leaves the laptop). set.via = 'laptop' | '' (GroupMe).
+  const LAPTOP = T.laptop || 'http://127.0.0.1:8787/v3';
   const CANCEL_REASONS = ['Chose Alternative Way Home', 'Not Answering', 'Long Wait Time Expected', 'Before Start', 'Not Ready',
     'Not Within Pickup Drop-off Parameters', 'Exceeded 2min Wait', 'After Deadline', 'Wrong Number', 'Not Grouped with Friends', 'Luggage etc.', 'Other'];
   const DUP = '#ff0000', BLACK = '#000000';
@@ -22,7 +25,7 @@
     get(k, d) { try { const v = localStorage.getItem('swt.' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
     set(k, v) { try { localStorage.setItem('swt.' + k, JSON.stringify(v)); } catch (e) { /* this session only */ } },
   };
-  let set = Object.assign({ name: '', dispName: true, tab: '', lookback: 6, token: '', groupId: '', groupName: '', sync: false }, ls.get('settings', {}));
+  let set = Object.assign({ name: '', dispName: true, tab: '', lookback: 6, token: '', groupId: '', groupName: '', sync: false, via: '' }, ls.get('settings', {}));
   let src = ls.get('src', '');
   if (!src) { src = 'x' + Math.random().toString(16).slice(2, 7); ls.set('src', src); }
 
@@ -489,13 +492,17 @@
   /* ---------------- GroupMe sync ---------------- */
   const S = { rides: {} };               // the rides as the chat describes them
   const sync = { ready: false, lastId: '', seen: new Set(), pending: [], todo: [], adds: [], lastPost: 0, err: '', lastServerAt: 0, busy: false };
-  async function gm(pathname, query, body, token) {
-    const u = new URL(GM + pathname);
+  async function gm(pathname, query, body, token, via) {
+    const laptop = (via === undefined ? set.via : via) === 'laptop';
+    const u = new URL((laptop ? LAPTOP : GM) + pathname);
     Object.entries(query || {}).forEach(([k, v]) => u.searchParams.set(k, v));
-    const res = await fetch(u, { method: body ? 'POST' : 'GET', headers: Object.assign({ 'X-Access-Token': token || set.token }, body ? { 'Content-Type': 'application/json' } : {}), body: body ? JSON.stringify(body) : undefined });
+    let res;
+    try { res = await fetch(u, { method: body ? 'POST' : 'GET', headers: Object.assign({ 'X-Access-Token': token || set.token }, body ? { 'Content-Type': 'application/json' } : {}), body: body ? JSON.stringify(body) : undefined }); }
+    catch (e) { throw new Error(laptop ? "Can't reach the texting server on this laptop — is it running? (allow local network access if Edge asks)" : "Can't reach GroupMe"); }
     if (res.status === 304) return null;
-    if (res.status === 401) throw new Error('GroupMe refused the token — reconnect GroupMe in Auto-text.');
-    if (!res.ok) throw new Error('GroupMe answered ' + res.status);
+    if (res.status === 401) throw new Error(laptop ? 'The laptop key is wrong — paste it again (dashboard ▸ Sync).' : 'GroupMe refused the token — reconnect GroupMe in Auto-text.');
+    if (laptop && res.status === 409) throw new Error('The texting server is set to sync through GroupMe (dashboard ▸ Sync).');
+    if (!res.ok) throw new Error((laptop ? 'The texting server answered ' : 'GroupMe answered ') + res.status);
     return (await res.json()).response;
   }
   function takeMessages(ms) { // chat messages -> fold; the texting computer's edits go on the to-do list
@@ -814,7 +821,7 @@
     else if (sync.err) { dot.style.background = 'var(--bad)'; txt.textContent = sync.err; }
     else if (!sync.ready) { dot.style.background = 'var(--warn)'; txt.textContent = 'Reading chat…'; }
     else { dot.style.background = 'var(--ok)'; txt.textContent = 'Sync on'; }
-    $('syncLbl').title = syncOn() ? `GroupMe sync chat: ${set.groupName}` : 'GroupMe sync is off';
+    $('syncLbl').title = !syncOn() ? 'Sync is off' : set.via === 'laptop' ? 'Syncing with the texting server on this laptop' : `GroupMe sync chat: ${set.groupName}`;
     const on = !!syncOn();
     $('abDot').style.background = on ? 'var(--ok)' : 'var(--muted)';
     $('abState').textContent = on ? 'on' : 'off'; $('abState').className = on ? '' : 'muted';
@@ -841,15 +848,17 @@
     $('avDot').style.background = on && !sync.err ? 'var(--ok)' : on ? 'var(--bad)' : 'var(--muted)';
     $('avState').textContent = !on ? 'Off' : sync.err ? 'Problem' : sync.ready ? 'Connected' : 'Connecting…';
     $('avSeen').textContent = !on ? 'Not sending' : sync.err ? sync.err : sync.lastServerAt ? `Laptop seen ${ago(sync.lastServerAt)}` : 'Laptop not seen yet';
-    $('avGm').innerHTML = set.token ? `<span>GroupMe: <b>${esc(set.groupName || 'no chat chosen')}</b></span><button class="link" id="avChange">Change</button><button class="link" id="avForget" style="color:var(--bad)">Forget token</button>`
-      : '<button class="link" id="avConnect">Connect GroupMe</button>';
-    if ($('avChange')) $('avChange').onclick = () => showConnect(3);
+    $('avGm').innerHTML = set.token && set.via === 'laptop' ? `<span>Syncing with: <b>this laptop</b></span><button class="link" id="avChange">Change</button><button class="link" id="avForget" style="color:var(--bad)">Forget key</button>`
+      : set.token ? `<span>GroupMe: <b>${esc(set.groupName || 'no chat chosen')}</b></span><button class="link" id="avChange">Change</button><button class="link" id="avForget" style="color:var(--bad)">Forget token</button>`
+      : '<button class="link" id="avConnect">Connect</button>';
+    if ($('avChange')) $('avChange').onclick = () => showConnect(set.via === 'laptop' ? 0 : 3);
     if ($('avForget')) $('avForget').onclick = () => { Object.assign(sync, { ready: false, lastId: '', seen: new Set(), pending: [], todo: [], adds: [], err: '' }); S.rides = {};
-      set = Object.assign({}, set, { token: '', groupId: '', groupName: '', sync: false, name: '' }); ls.set('settings', set); toast('GroupMe token forgotten'); render(); };
-    if ($('avConnect')) $('avConnect').onclick = () => showConnect(1);
+      const wasLaptop = set.via === 'laptop';
+      set = Object.assign({}, set, { token: '', groupId: '', groupName: '', sync: false, via: '', name: wasLaptop ? set.name : '' }); ls.set('settings', set); toast(wasLaptop ? 'Laptop key forgotten' : 'GroupMe token forgotten'); render(); };
+    if ($('avConnect')) $('avConnect').onclick = () => showConnect(0);
   }
   $('setSync').addEventListener('click', () => {
-    if (!set.token || !set.groupId) return showConnect(set.token ? 3 : 1);
+    if (!set.token || !set.groupId) return showConnect(set.token && set.via !== 'laptop' ? 3 : 0);
     setSyncOn(!set.sync);
   });
   function setSyncOn(on) {
@@ -859,15 +868,35 @@
   }
 
   /* ---------- 2a: Connect GroupMe (inside Excel the bookmark copies the token; pasting it here saves it) ---------- */
-  const cg = { step: 1, err: '', busy: false, groups: null, opened: false, token: '' };
+  // steps: 0 = choose (this laptop / GroupMe), 4 = paste the laptop key; GroupMe: 1 = bookmark, 2 = paste token, 3 = pick chat
+  const cg = { step: 0, err: '', busy: false, groups: null, opened: false, token: '' };
   function showConnect(step) {
-    Object.assign(cg, { step: step || 1, err: '', busy: false, opened: false });
+    Object.assign(cg, { step: step || 0, err: '', busy: false, opened: false });
     if (cg.step === 3) { cg.token = set.token; cg.groups = null; loadChats(); }
     $('connect').hidden = false; renderConnect();
   }
-  $('cgBack').addEventListener('click', () => { if (cg.step === 2) { cg.step = 1; renderConnect(); } else $('connect').hidden = true; });
+  $('cgBack').addEventListener('click', () => { const back = { 2: 1, 1: 0, 4: 0 }[cg.step]; if (back !== undefined) { cg.step = back; cg.err = ''; renderConnect(); } else $('connect').hidden = true; });
   function renderConnect() {
     const b = $('cgBody'), err = cg.err ? `<div class="cg-err" role="alert">${esc(cg.err)}</div>` : '';
+    if (cg.step === 0) {
+      b.innerHTML = `<h2>Sync with</h2><p class="cg-sub">Where the texting server runs.</p>
+        <button class="grp" id="cgLaptop"><b>This laptop</b><span class="sugg">Recommended</span><br><span class="muted">Texting runs on this computer. No GroupMe; ride data stays here.</span></button>
+        <button class="grp" id="cgGm"><b>A GroupMe chat</b><br><span class="muted">Texting runs on another computer (older setup).</span></button>`;
+      $('cgLaptop').onclick = () => { cg.step = 4; cg.err = ''; renderConnect(); };
+      $('cgGm').onclick = () => { cg.step = 1; cg.err = ''; renderConnect(); };
+      return;
+    }
+    if (cg.step === 4) {
+      b.innerHTML = `<h2>Connect to this laptop</h2><p class="cg-sub">On the texting dashboard, click the <b>Sync</b> pill and copy the laptop key.</p>
+        <input class="fld" id="cgKey" type="password" placeholder="Paste the laptop key" autocomplete="off" spellcheck="false" style="height:42px">
+        <button class="btn primary" id="cgKeySave" style="width:100%;margin-top:10px" ${cg.busy ? 'disabled' : ''}>${cg.busy ? 'Checking…' : 'Connect'}</button>${err}
+        <p class="muted" style="margin-top:10px">If Edge asks to let this site access devices on your local network, click <b>Allow</b>.</p>`;
+      $('cgKey').onkeydown = e => { if (e.key === 'Enter') saveLaptopKey($('cgKey').value); };
+      $('cgKey').onpaste = () => setTimeout(() => saveLaptopKey($('cgKey').value), 0);
+      $('cgKeySave').onclick = () => saveLaptopKey($('cgKey').value);
+      if (!cg.busy) $('cgKey').focus();
+      return;
+    }
     if (cg.step === 3) {
       const list = cg.groups, best = list && list.length ? (list.find(g => /dispatch/i.test(g.name)) || list.slice().sort((a, c) => (c.active || 0) - (a.active || 0))[0]) : null;
       b.innerHTML = `<h2>Pick the dispatch chat</h2><p class="cg-sub">Sync turns on when you pick.</p>${err}
@@ -915,24 +944,38 @@
     cg.busy = true; cg.err = ''; renderConnect();
     try {
       const [me, gs] = await Promise.all([
-        gm('/users/me', null, null, tok).catch(() => null),
-        gm('/groups', { per_page: 100, omit: 'memberships' }, null, tok)
+        gm('/users/me', null, null, tok, '').catch(() => null),
+        gm('/groups', { per_page: 100, omit: 'memberships' }, null, tok, '')
       ]);
       const gmParts = String((me && me.name) || '').trim().split(/\s+/).filter(Boolean);
       const formatted = gmParts.length > 1 ? `${gmParts[0][0].toUpperCase()}. ${gmParts[gmParts.length - 1]}` : (gmParts[0] || '');
       cg.token = tok;
-      set = Object.assign({}, set, { token: tok, name: formatted || (me && me.name) || set.name || '' });
+      set = Object.assign({}, set, { name: formatted || (me && me.name) || set.name || '' });
       ls.set('settings', set);
       cg.groups = (gs || []).map(g => ({ id: String(g.id), name: g.name, active: Number((g.messages && g.messages.last_message_created_at) || g.updated_at || 0) }));
       Object.assign(cg, { busy: false, step: 3 });
     } catch (e) { Object.assign(cg, { busy: false, err: 'That token looks incomplete. Try again.' }); }
     renderConnect(); render();
   }
+  async function saveLaptopKey(raw) {
+    const key = String(raw || '').trim().toLowerCase();
+    if (!/^[a-f0-9]{32}$/.test(key)) { cg.err = 'That key looks incomplete — copy it again from the dashboard (Sync pill).'; return renderConnect(); }
+    cg.busy = true; cg.err = ''; renderConnect();
+    try {
+      const gs = await gm('/groups', null, null, key, 'laptop');
+      const g = (gs || [])[0];
+      if (!g) throw new Error('The texting server has no sync chat.');
+      Object.assign(sync, { ready: false, lastId: '', seen: new Set(), pending: [], todo: [], adds: [], err: '' }); S.rides = {};
+      set = Object.assign({}, set, { via: 'laptop', token: key, groupId: String(g.id), groupName: g.name, sync: true }); ls.set('settings', set);
+      Object.assign(cg, { busy: false }); $('connect').hidden = true;
+      toast('Syncing with this laptop'); render(); tick();
+    } catch (e) { Object.assign(cg, { busy: false, err: e.message || String(e) }); renderConnect(); }
+  }
   async function loadChats() {
     try {
       const [me, gs] = await Promise.all([
-        gm('/users/me', null, null, cg.token).catch(() => null),
-        gm('/groups', { per_page: 100, omit: 'memberships' }, null, cg.token)
+        gm('/users/me', null, null, cg.token, '').catch(() => null),
+        gm('/groups', { per_page: 100, omit: 'memberships' }, null, cg.token, '')
       ]);
       if (me && me.name) {
         const gmParts = String(me.name).trim().split(/\s+/).filter(Boolean);
@@ -948,7 +991,7 @@
   function pickChat(id) {
     const g = (cg.groups || []).find(x => x.id === id); if (!g) return;
     Object.assign(sync, { ready: false, lastId: '', seen: new Set(), pending: [], todo: [], adds: [], err: '' }); S.rides = {};
-    set = Object.assign({}, set, { token: cg.token || set.token, groupId: g.id, groupName: g.name, sync: true }); ls.set('settings', set);
+    set = Object.assign({}, set, { via: '', token: cg.token || set.token, groupId: g.id, groupName: g.name, sync: true }); ls.set('settings', set);
     $('connect').hidden = true;
     toast('GroupMe sync turned on');
     render(); tick();

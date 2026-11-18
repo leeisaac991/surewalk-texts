@@ -39,11 +39,12 @@
     }
     post('/api/status').then(function (s) {
       var dot = !s.configured ? '#9e9e9e' : s.lastError ? '#d32f2f' : !s.ready ? '#f57c00' : '#2e7d32';
-      var txt = !s.configured ? 'GroupMe sync: set up' : s.lastError ? 'GroupMe: ' + s.lastError : !s.ready ? 'GroupMe: reading chat…'
-        : 'GroupMe';
+      var lbl = s.mode === 'local' ? 'Sync' : 'GroupMe';
+      var txt = !s.configured ? 'Sync: set up' : s.lastError ? lbl + ': ' + s.lastError : !s.ready ? lbl + ': reading…'
+        : (s.mode === 'local' ? 'Sync: Excel' : 'GroupMe');
       b.innerHTML = '<span style="width:8px;height:8px;border-radius:50%;background:' + dot + '"></span>';
       b.appendChild(document.createTextNode(txt));
-      b.title = 'Sync chat: ' + (s.group || 'not set') + '\n' + s.rides + ' rides tonight' + (s.waiting ? ' · ' + s.waiting + ' to post' : '') + '\nLast from Excel: ' + ago(s.lastExcelAt) + '\nChecked: ' + ago(s.lastPollAt) + '\nClick for GroupMe sync settings';
+      b.title = (s.mode === 'local' ? 'Syncing with the Excel panel on this laptop (no GroupMe)' : 'GroupMe sync chat: ' + (s.group || 'not set')) + '\n' + s.rides + ' rides tonight' + (s.waiting ? ' · ' + s.waiting + ' to post' : '') + '\nLast from Excel: ' + ago(s.lastExcelAt) + '\nChecked: ' + ago(s.lastPollAt) + '\nClick for sync settings (laptop key)';
     }).catch(function () { b.textContent = 'Texting server offline'; });
   }
 
@@ -56,7 +57,7 @@
     if (!top || document.getElementById('swAdd')) return;
     var b = document.createElement('button');
     b.id = 'swAdd'; b.className = 'pill'; b.type = 'button'; b.textContent = '＋ Ride';
-    b.title = 'Add a ride by hand (a rider who called in). The Excel panel with GroupMe sync on writes it into the sheet.';
+    b.title = 'Add a ride by hand (a rider who called in). The Excel panel with sync on writes it into the sheet.';
     b.style.cssText = 'cursor:pointer;border:0;font:inherit';
     b.onclick = addRide;
     var gmPill = document.getElementById('swGm');
@@ -149,7 +150,7 @@
       '<label style="display:grid;gap:3px;margin-top:8px;font-size:12px;color:var(--muted)">ADA assistance<select id="swaAda" style="width:100%"><option>No</option><option>Yes</option></select></label>' +
       field('swaNotes', 'Notes (optional)') +
       '<label style="display:flex;gap:8px;align-items:center;margin-top:10px;font-size:13px"><input type="checkbox" id="swaCalled"> Already talked to them — mark called (no confirmation text)</label>';
-    var pending = window.ask('Add a ride by hand. The Excel panel with GroupMe sync on puts it in the sheet within a few seconds.', 'Add ride', html);
+    var pending = window.ask('Add a ride by hand. The Excel panel with sync on puts it in the sheet within a few seconds.', 'Add ride', html);
     setTimeout(function () {
       FIELDS.forEach(function (i) { var el = document.getElementById(i); if (el && draft[i]) el.value = draft[i]; });
       var f = document.getElementById('swaPhone'); if (f) f.focus();
@@ -176,7 +177,7 @@
       if (!addsSeen[a.id] || addsSeen[a.id] === a.state) return;
       addsSeen[a.id] = a.state;
       if (a.state === 'added') say(a.first + "'s ride is in the sheet (row " + a.row + ').');
-      if (a.state === 'lost') say(a.first + "'s ride never made it into the sheet — is an Excel panel open with GroupMe sync on? Add it in Excel.", 'warn');
+      if (a.state === 'lost') say(a.first + "'s ride never made it into the sheet — is the Excel panel open with sync on? Add it in Excel.", 'warn');
     });
   }
   // Running on the old Linux texting computer: Windows is the main program now. A strip at the top says so, and

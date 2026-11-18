@@ -147,6 +147,85 @@ async function postPending() {
   sync.posted++;
 }
 
+/* ---------------- this laptop as the sync chat (no GroupMe) ---------------- */
+// The Excel panel on this laptop can call this server directly (Edge and Chrome let https pages reach 127.0.0.1 when
+// the server allows it), so the server can BE the sync chat: the same 'sw1' lines in a GroupMe-shaped API under /v3,
+// one laptop key instead of a GroupMe token, and ride data never leaves this laptop. It's the default unless a
+// GroupMe chat was set up here before (conf.mode 'groupme').
+const LOCAL_GROUP = 'local', LOCAL_NAME = 'This laptop';
+const chatFile = path.join(STATE, 'chat.jsonl');
+const chat = { msgs: [], seq: 0, loaded: false };
+const isLocal = () => conf.mode === 'local' || (conf.mode !== 'groupme' && !conf.groupId);
+const syncActive = () => isLocal() || !!(conf.token && conf.groupId);
+function localKey() {
+  if (!/^[a-f0-9]{32}$/.test(conf.localKey || '')) { conf = Object.assign({}, conf, { localKey: crypto.randomBytes(16).toString('hex') }); saveConf(conf); }
+  return conf.localKey;
+}
+function chatLoad() { // the last 24 h (rewrites the file without older lines)
+  const cutoff = Date.now() / 1000 - 24 * 3600;
+  try { chat.msgs = fs.readFileSync(chatFile, 'utf8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch (e) { return null; } }).filter(m => m && m.created_at >= cutoff); }
+  catch (e) { chat.msgs = []; }
+  chat.seq = chat.msgs.reduce((x, m) => Math.max(x, Number(m.id) || 0), 0);
+  fs.mkdirSync(STATE, { recursive: true });
+  fs.writeFileSync(chatFile, chat.msgs.map(m => JSON.stringify(m) + '\n').join(''), { mode: 0o600 });
+  chat.loaded = true;
+}
+function chatAdd(text, name) {
+  const id = Math.max(chat.seq + 1, Date.now() * 1000); chat.seq = id;
+  const m = { id: String(id), created_at: Math.floor(Date.now() / 1000), text, name };
+  chat.msgs.push(m);
+  fs.appendFileSync(chatFile, JSON.stringify(m) + '\n', { mode: 0o600 });
+  if (chat.msgs.length > 50000) chat.msgs.splice(0, chat.msgs.length - 50000);
+  return m;
+}
+// Who may call /v3 from a browser: the Script Lab panel, the add-in (GitHub Pages), Excel itself, and pages on this laptop.
+const PANEL_ORIGIN = /^(https:\/\/(script-lab\.public\.cdn\.office\.net|leeisaac991\.github\.io|[a-z0-9-]+\.officeapps\.live\.com|excel\.cloud\.microsoft)|http:\/\/(127\.0\.0\.1|localhost)(:\d+)?)$/;
+const sameKey = (a, b) => { const x = Buffer.from(String(a || '')), y = Buffer.from(String(b || '')); return x.length === y.length && crypto.timingSafeEqual(x, y); };
+async function localApi(req, res, url) {
+  const origin = req.headers.origin;
+  if (origin && !PANEL_ORIGIN.test(origin)) return send(res, 403, { meta: { errors: ['origin not allowed'] } });
+  const cors = origin ? { 'Access-Control-Allow-Origin': origin, 'Vary': 'Origin', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, X-Access-Token', 'Access-Control-Allow-Private-Network': 'true',
+    'Access-Control-Allow-Local-Network': 'true', 'Access-Control-Max-Age': '600' } : {};
+  if (req.method === 'OPTIONS') { res.writeHead(204, cors); return res.end(); }
+  const out = (code, body) => send(res, code, body, 'application/json; charset=utf-8', cors);
+  if (!sameKey(req.headers['x-access-token'], localKey())) return out(401, { meta: { errors: ['wrong laptop key'] } });
+  if (!isLocal()) return out(409, { meta: { errors: ['this laptop syncs through GroupMe right now (dashboard ▸ sync settings)'] } });
+  const p = url.pathname;
+  if (p === '/v3/users/me') return out(200, { response: { id: LOCAL_GROUP, user_id: LOCAL_GROUP, name: '' } });
+  if (p === '/v3/groups') return out(200, { response: [{ id: LOCAL_GROUP, name: LOCAL_NAME }] });
+  if (p !== `/v3/groups/${LOCAL_GROUP}/messages`) return out(404, { meta: { errors: ['not found'] } });
+  if (!chat.loaded) chatLoad();
+  if (req.method === 'POST') {
+    let text = '';
+    try { text = String(JSON.parse(await readBody(req)).message.text || ''); } catch (e) { return out(400, { meta: { errors: ['bad message'] } }); }
+    if (!text || text.length > 1000) return out(400, { meta: { errors: ['message empty or too long'] } });
+    const m = chatAdd(text, 'Excel panel');
+    if (sync.ready) take([m]);
+    return out(201, { response: { message: m } });
+  }
+  const q = Object.fromEntries(url.searchParams), lim = Math.min(100, Math.max(1, Number(q.limit) || 20));
+  const list = q.after_id ? chat.msgs.filter(m => Number(m.id) > Number(q.after_id)).slice(0, lim)                                  // oldest first
+    : chat.msgs.filter(m => !q.before_id || Number(m.id) < Number(q.before_id)).slice().reverse().slice(0, lim);                 // newest first
+  if (!list.length) { res.writeHead(304, cors); return res.end(); }
+  return out(200, { response: { count: chat.msgs.length, messages: list } });
+}
+function localTick() { // the server's side of the laptop chat: read it once, then post what's waiting
+  if (!sync.ready) {
+    chatLoad();
+    sync.seen.clear(); store.rides = {}; sync.lastId = '';
+    const cutoff = Date.now() / 1000 - 20 * 3600;
+    const n = take(chat.msgs.filter(m => m.created_at >= cutoff));
+    sync.ready = true;
+    log(`laptop sync: ${chat.msgs.length} messages, ${n} ride events, ${Object.keys(store.rides).length} rides`);
+  }
+  while (outLines.length) {
+    const text = SWP.pack(outLines.slice(0, 40))[0], used = text.split('\n').length;
+    take([chatAdd(text, 'texting server')]);
+    outLines.splice(0, used); saveOut(); sync.posted++;
+  }
+}
+
 /** The sheet edits the texting code just made -> 'upd' events for the Excel panel. */
 function shipChanges() {
   const ch = gas.takeChanges();
@@ -185,7 +264,7 @@ function requestAdd(b) {
   if (miss.length) return { ok: false, error: 'Fill in the ' + miss.join(', ') + '.' };
   if (phone.length !== 10) return { ok: false, error: 'The phone number needs 10 digits.' };
   if (f.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email)) return { ok: false, error: "That email doesn't look right." };
-  if (!conf.groupId || !sync.ready) return { ok: false, error: "GroupMe sync isn't running, so the Excel panel can't get the ride. Set it up first (GroupMe pill)." };
+  if (!syncActive() || !sync.ready) return { ok: false, error: "Sync with the Excel panel isn't running, so the panel can't get the ride. Set it up first (Sync pill)." };
   if (!b.force) {
     const same = tonight().find(r => isOpen(r) && digits(r.f.phone).slice(-10) === phone);
     if (same) return { ok: false, dup: `${same.f.first || 'Someone'}${same.f.last ? ' ' + same.f.last : ''} already has an open ride tonight with that phone (row ${same.f.row}).` };
@@ -207,6 +286,7 @@ async function loop() {
   if (loopBusy) return;
   loopBusy = true;
   try {
+    if (isLocal()) { localTick(); sync.lastPollAt = Date.now(); sync.lastError = ''; return; }
     if (!conf.token || !conf.groupId) { sync.ready = false; return; }
     if (!sync.ready) { await backfill(); sync.ready = true; }
     else await poll();
@@ -214,7 +294,7 @@ async function loop() {
     sync.lastPollAt = Date.now(); sync.lastError = '';
   } catch (e) {
     sync.lastError = String(e.message || e);
-    log('GroupMe:', sync.lastError);
+    log(isLocal() ? 'laptop sync:' : 'GroupMe:', sync.lastError);
   } finally { loopBusy = false; }
 }
 
@@ -309,7 +389,9 @@ function dashboardHtml() {
 const csvCell = v => { const s = v && typeof v === 'object' && 'd' in v ? new Date(v.d).toLocaleString('en-US') : String(v == null ? '' : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
 
 function status() {
-  return { ready: sync.ready, configured: !!(conf.token && conf.groupId), group: conf.groupName || '', groupId: conf.groupId || '',
+  const local = isLocal();
+  return { ready: sync.ready, configured: syncActive(), mode: local ? 'local' : 'groupme', localKey: localKey(),
+    group: local ? LOCAL_NAME : conf.groupName || '', groupId: local ? LOCAL_GROUP : conf.groupId || '', groupmeChat: conf.groupName || '',
     lastPollAt: sync.lastPollAt, lastError: sync.lastError, lastExcelAt: sync.lastExcelAt, waiting: outLines.length, posted: sync.posted,
     rides: tonight().length, port: PORT,
     adds: adds.filter(a => Date.now() - a.at < 2 * ADD_WAIT_MS).map(a => Object.assign({ id: a.id, first: a.first, at: a.at }, addState(a))) };
@@ -383,9 +465,10 @@ const server = http.createServer(async (req, res) => {
     if (!okHost(req.headers.host)) return send(res, 403, 'Forbidden', 'text/plain');
     const url = new URL(req.url, `http://127.0.0.1:${PORT}`);
     const p = url.pathname;
+    if (p.startsWith('/v3/')) return await localApi(req, res, url); // the Excel panel on this laptop (laptop key)
     if (req.method === 'POST' && p === '/bridge') { // the phone bridge (checks its key itself)
       const body = await readBody(req);
-      if (conf.groupId && !sync.ready) return send(res, 503, { error: 'still reading the GroupMe chat' });
+      if (syncActive() && !sync.ready) return send(res, 503, { error: 'still reading the sync chat' });
       const out = run(() => doPost({ postData: { contents: body } }));
       return send(res, 200, out.getContent());
     }
@@ -427,9 +510,12 @@ const server = http.createServer(async (req, res) => {
       }
       if (p === '/api/config') {
         const token = cleanTok(body.token || conf.token || '');
-        if (body.off) { conf = {}; saveConf(conf); sync.ready = false; store.rides = {}; store.ver++; gas.clearCache(); return send(res, 200, status()); }
+        const keep = { localKey: conf.localKey };
+        if (body.mode === 'local') { conf = Object.assign({}, conf, { mode: 'local' }); saveConf(conf); sync.ready = false; store.rides = {}; store.ver++; gas.clearCache(); loop(); return send(res, 200, status()); }
+        if (body.newKey) { conf = Object.assign({}, conf, { localKey: '' }); localKey(); return send(res, 200, status()); }
+        if (body.off) { conf = Object.assign({ mode: 'local' }, keep); saveConf(conf); sync.ready = false; store.rides = {}; store.ver++; gas.clearCache(); loop(); return send(res, 200, status()); }
         if (!token || !body.groupId) return send(res, 200, { ok: false, error: 'Pick a chat.' });
-        conf = { token, groupId: String(body.groupId), groupName: String(body.groupName || '') };
+        conf = Object.assign(keep, { mode: 'groupme', token, groupId: String(body.groupId), groupName: String(body.groupName || '') });
         saveConf(conf); sync.ready = false;
         loop();
         return send(res, 200, status());
@@ -488,7 +574,8 @@ if (cmd === 'test-text') {
 server.listen(PORT, '127.0.0.1', () => {
   log(`SURE Walk Texts: http://127.0.0.1:${PORT}  (log + settings in ${STATE})`);
   if (!WIN) log('⚠ DEPRECATED: the Linux texting computer is a backup only. SURE Walk Texts is developed for Windows now (windows/ — START-TEXTING.cmd on the laptop); no new features land here first.');
-  if (!conf.groupId) log('GroupMe sync chat not set yet: open the dashboard ▸ GroupMe sync.');
+  if (isLocal()) log('Sync: the Excel panel on this laptop (no GroupMe). Its laptop key is on the dashboard ▸ Sync.');
+  else if (!conf.groupId) log('GroupMe sync chat not set yet: open the dashboard ▸ Sync.');
   if (process.argv.includes('--open')) spawn(WIN ? 'explorer.exe' : 'xdg-open', [`http://127.0.0.1:${PORT}/`], { stdio: 'ignore', detached: true }).unref();
 });
 loop();
