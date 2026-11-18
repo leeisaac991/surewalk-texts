@@ -194,7 +194,7 @@ function requestAdd(b) {
   if (b.called) { const w = new Date(); f.call = `${w.getHours()}:${String(w.getMinutes()).padStart(2, '0')}`; } // TZ is Austin
   const ev = { e: 'add', id: 'a' + crypto.randomBytes(4).toString('hex'), src: 's', f: Object.assign({ ts }, f) };
   outLines.push(SWP.line(ev)); saveOut();
-  adds.push({ id: ev.id, first: f.first, phone10: phone, ts, at: Date.now() });
+  adds.push({ id: ev.id, first: f.first, phone10: phone, ts, at: Date.now(), f: ev.f }); // f: kept in memory only (the phone lookup's EID / email)
   if (adds.length > 50) adds.shift();
   log('→ add ride', ev.id, f.first, f.pu, '→', f.do);
   return { ok: true, id: ev.id };
@@ -282,6 +282,69 @@ function status() {
     adds: adds.filter(a => Date.now() - a.at < 2 * ADD_WAIT_MS).map(a => Object.assign({ id: a.id, first: a.first, at: a.at }, addState(a))) };
 }
 
+// ＋ Ride phone lookup: every past ride this server knows for a phone (rides from the sync chat + the texting log),
+// summed up so the dispatcher can ask "Is this Maliha?". Read only: never writes, never logs the phone or the results.
+// The phone → rides index is built once and rebuilt only when the rides or the log change (or after a minute).
+let lookupIdx = null;
+const digits10 = v => { let d = String(v || '').replace(/\D/g, ''); if (d.length === 11 && d[0] === '1') d = d.slice(1); return d.length === 10 ? d : ''; };
+function lookupIndex() {
+  const logs = (() => { try { return gas.logRows() || []; } catch (e) { return []; } })();
+  if (lookupIdx && lookupIdx.ver === store.ver && lookupIdx.logs === logs.length && lookupIdx.adds === adds.length && Date.now() - lookupIdx.at < 60e3) return lookupIdx.by;
+  const by = new Map(), seen = new Set();
+  const add = (p, ride) => { if (!p) return; (by.get(p) || by.set(p, []).get(p)).push(ride); };
+  Object.values(store.rides || {}).forEach(r => {
+    const f = r.f || {}, p = digits10(f.phone);
+    if (!p) return;
+    seen.add(r.id);
+    const bg = String(f.bg || '').toLowerCase(), rsn = String(f.rsn || '');
+    add(p, { id: r.id, ts: String(f.ts || ''), first: String(f.first || '').trim(), last: String(f.last || '').trim(), eid: String(f.eid || '').trim(),
+      email: String(f.email || '').trim(), ada: /^y/i.test(String(f.ada || '')), pu: String(f.pu || '').trim(), do: String(f.do || '').trim(),
+      cancelled: !!rsn || bg === '#000000', dup: bg === '#ff0000', noShow: /no.?show/i.test(rsn), off: /off.?campus|invalid/i.test(rsn),
+      add: r.id.charAt(0) === 'a' }); // typed in on ＋ Ride: not a ride of its own (the sheet's copy is), but it has the EID / email
+  });
+  // ＋ Ride requests made here (memory only): the EID / email the dispatcher typed. Not rides of their own.
+  adds.forEach(a => { const f = a.f || {}; add(a.phone10, { id: a.id, ts: String(f.ts || ''), first: String(f.first || '').trim(), last: String(f.last || '').trim(),
+    eid: String(f.eid || '').trim(), email: String(f.email || '').trim(), ada: /^y/i.test(String(f.ada || '')), pu: '', do: '', cancelled: false, dup: false, noShow: false, off: false, add: true }); });
+  // The texting log: older riders the sync chat no longer has (one ride per ride id; name only).
+  logs.forEach(r => {
+    const id = String(r[4] || ''), p = digits10(r[3]), name = String(r[6] || '').trim();
+    if (!id || !p || !name || seen.has(id) || /^(rider|unknown)$/i.test(name)) return;
+    seen.add(id);
+    const ts = r[0] && typeof r[0] === 'object' && 'd' in r[0] ? new Date(r[0].d).toISOString() : String(r[0] || '');
+    const parts = name.split(/\s+/);
+    add(p, { id, ts, first: parts[0], last: parts.slice(1).join(' '), eid: '', email: '', ada: false, pu: '', do: '', cancelled: false, dup: false, noShow: false, off: false });
+  });
+  lookupIdx = { by, ver: store.ver, logs: logs.length, adds: adds.length, at: Date.now() };
+  return by;
+}
+function lookupRider(body) {
+  const phone = digits10(body.phone);
+  if (!phone) return { ok: true, rides: 0 };
+  const all = (lookupIndex().get(phone) || []).slice().sort((a, b) => (a.ts < b.ts ? 1 : -1)); // newest first
+  const rides = all.filter(r => !r.add);
+  if (!rides.length) return { ok: true, rides: 0 };
+  const norm = s => s.replace(/\s+/g, ' ').trim().toLowerCase();
+  const day = ts => String(ts).slice(0, 10);
+  const names = new Map();
+  rides.forEach(r => { const k = norm(r.first + ' ' + r.last); if (!k) return;
+    const n = names.get(k) || names.set(k, { first: r.first, last: r.last, count: 0, lastDate: day(r.ts), eid: '', email: '', ada: false }).get(k);
+    n.count++; if (r.ada) n.ada = true; });
+  all.forEach(r => { const n = names.get(norm(r.first + ' ' + r.last)); if (n) { if (!n.eid && r.eid) n.eid = r.eid; if (!n.email && r.email) n.email = r.email; } });
+  const top = (key, n) => { const m = new Map(); rides.forEach(r => { const k = key(r); if (k) m.set(k, (m.get(k) || 0) + 1); });
+    return [...m].sort((a, b) => b[1] - a[1]).slice(0, n).map(([k, c]) => ({ k, count: c })); };
+  const eids = [...new Set(all.map(r => r.eid.toLowerCase()).filter(e => e && !/^n\/?a$/i.test(e)))];
+  const optOut = (() => { try { return JSON.parse(gas.props.script.TX_OPTOUT || '[]').includes(phone); } catch (e) { return false; } })();
+  return { ok: true, rides: rides.length, lastDate: day(rides[0].ts),
+    names: [...names.values()], // newest first (rides are sorted that way)
+    eid: (all.find(r => r.eid) || {}).eid || '', eids: eids.length,
+    email: (all.find(r => r.email) || {}).email || '', emails: new Set(all.map(r => r.email.toLowerCase()).filter(Boolean)).size,
+    ada: rides.some(r => r.ada),
+    pickups: top(r => r.pu, 3), dropoffs: top(r => r.do, 3),
+    routes: top(r => (r.pu && r.do ? r.pu + '→' + r.do : ''), 3).map(x => Object.assign(x, { pu: x.k.split('→')[0], do: x.k.split('→')[1] })),
+    cancels: rides.filter(r => r.cancelled && !r.noShow).length, noShows: rides.filter(r => r.noShow).length, dups: rides.filter(r => r.dup).length,
+    optOut, wasOff: rides.some(r => r.off) };
+}
+
 const server = http.createServer(async (req, res) => {
   try {
     if (!okHost(req.headers.host)) return send(res, 403, 'Forbidden', 'text/plain');
@@ -316,6 +379,7 @@ const server = http.createServer(async (req, res) => {
         catch (e) { return send(res, 200, { ok: false, error: String((e && e.message) || e) }); }
       }
       if (p === '/api/status') return send(res, 200, status());
+      if (p === '/api/lookupRider') return send(res, 200, lookupRider(body || {}));
       if (p === '/api/addRide') return send(res, 200, requestAdd(body || {}));
       if (p === '/api/groups') { // check a token and list its chats
         const token = cleanTok(body.token || conf.token || '');
