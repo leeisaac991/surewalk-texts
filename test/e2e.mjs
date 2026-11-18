@@ -20,7 +20,11 @@ async function until(fn, msg, ms = 25000) {
 }
 
 /* ---------- fake GroupMe ---------- */
-const msgs = []; let seq = 1000;
+// SYNC=laptop: the panel syncs with the texting server itself (the laptop chat, no GroupMe); the fake GroupMe below then
+// only serves the panel page (any message traffic to it is a failure).
+const VIA_LAPTOP = process.env.SYNC === 'laptop';
+const LKEY = 'abcdef0123456789abcdef0123456789';
+const msgs = []; let seq = 1000, gmChatHits = 0;
 const gm = http.createServer(async (req, res) => {
   const u = new URL(req.url, 'http://x'), cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': 'GET,POST' };
   const send = (code, body, type = 'application/json') => { res.writeHead(code, Object.assign({ 'Content-Type': type }, cors)); res.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body)); };
@@ -31,6 +35,7 @@ const gm = http.createServer(async (req, res) => {
   if (u.pathname === '/v3/groups') return send(200, { response: [{ id: 'g1', name: 'SURE Walk Texts sync' }] });
   const m = /^\/v3\/groups\/g1\/messages$/.exec(u.pathname);
   if (!m) return send(404, {});
+  gmChatHits++;
   if (req.method === 'POST') {
     let s = ''; for await (const d of req) s += d;
     const text = JSON.parse(s).message.text;
@@ -91,8 +96,10 @@ function panelPage(click) {
   return `<!doctype html><html><head><meta charset="utf-8"></head><body>${html}
 <script>${clock}
 window.FAKE_SHEET = ${JSON.stringify(SHEET)};
-window.SWT_TEST = { tick: 1000, gap: 300, gm: 'http://127.0.0.1:${GPORT}/v3' };
-localStorage.setItem('swt.settings', JSON.stringify({ name: 'T. Tester', dispName: true, token: 'tok_${'a'.repeat(30)}', groupId: 'g1', groupName: 'SURE Walk Texts sync', sync: true }));
+window.SWT_TEST = { tick: 1000, gap: 300, gm: 'http://127.0.0.1:${GPORT}/v3', laptop: 'http://127.0.0.1:${SPORT}/v3' };
+localStorage.setItem('swt.settings', JSON.stringify(${VIA_LAPTOP
+    ? `{ name: 'T. Tester', dispName: true, via: 'laptop', token: '${LKEY}', groupId: 'local', groupName: 'This laptop', sync: true }`
+    : `{ name: 'T. Tester', dispName: true, token: 'tok_${'a'.repeat(30)}', groupId: 'g1', groupName: 'SURE Walk Texts sync', sync: true }`}));
 window.confirm = () => true;
 ${click ? `setTimeout(() => { SWT.openCalling(); __xl.click(${+click}); setTimeout(() => document.querySelector('#selRide [data-a=cancel]').click(), 400); }, 1500);` : ''}
 </script>
@@ -123,7 +130,7 @@ async function browser() {
 function server() {
   const cfg = path.join(TMP, 'cfg', 'surewalk-texts');
   fs.mkdirSync(cfg, { recursive: true });
-  fs.writeFileSync(path.join(cfg, 'config.json'), JSON.stringify({ token: 'tok_' + 'b'.repeat(30), groupId: 'g1', groupName: 'SURE Walk Texts sync' }));
+  fs.writeFileSync(path.join(cfg, 'config.json'), JSON.stringify(VIA_LAPTOP ? { localKey: LKEY } : { token: 'tok_' + 'b'.repeat(30), groupId: 'g1', groupName: 'SURE Walk Texts sync' }));
   const p = spawn(process.execPath, ['--import', 'data:text/javascript,' + encodeURIComponent(`const R=Date,T0=${NOW},R0=R.now();globalThis.Date=class extends R{constructor(...a){super(...(a.length?a:[T0+R.now()-R0]))}static now(){return T0+R.now()-R0}};`), path.join(ROOT, 'server/server.mjs')], {
     env: Object.assign({}, process.env, { PORT: SPORT, SUREWALK_STATE: path.join(TMP, 'state'), XDG_CONFIG_HOME: path.join(TMP, 'cfg'), GROUPME_API: `http://127.0.0.1:${GPORT}/v3`, SW_POLL_MS: 700, SW_POST_GAP_MS: 200, SW_SEND_GAP_MS: 0 }),
     stdio: ['ignore', 'pipe', 'pipe'] });
@@ -150,7 +157,15 @@ const B = await browser();
 const sees = async () => (await rpc('getState')).rides.length;
 await until(async () => (await sees()) === 3, 'panel posted tonight\'s 3 rides; the texting server sees them');
 ok(await B.js("!!document.getElementById('restartBtn')"), 'restart button present in the bar');
-const evs = () => msgs.map(m => m.text).join('\n');
+// The sync chat as both sides see it: the fake GroupMe's messages, or the texting server's own laptop chat.
+const chatMsgs = () => VIA_LAPTOP ? (() => { try { return fs.readFileSync(path.join(TMP, 'state', 'chat.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)); } catch (e) { return []; } })() : msgs;
+const lapi = (p, opts = {}) => fetch(`http://127.0.0.1:${SPORT}/v3${p}`, Object.assign({ headers: Object.assign({ 'X-Access-Token': LKEY, 'Content-Type': 'application/json' }, opts.headers || {}) }, opts.init || {}));
+async function inject(text) { // a message from someone else in the chat
+  if (VIA_LAPTOP) await lapi('/groups/local/messages', { init: { method: 'POST', body: JSON.stringify({ message: { text } }) } });
+  else msgs.push({ id: String(++seq), created_at: Math.floor(Date.now() / 1000), text });
+}
+const evs = () => chatMsgs().map(m => m.text).join('\n');
+if (VIA_LAPTOP) console.log('(sync: this laptop, no GroupMe)');
 ok(/‹sw1›\{"e":"ride","id":"f1"/.test(evs()), 'rides are keyed by the form Id');
 
 const groupsRes = await (await fetch(`http://127.0.0.1:${SPORT}/api/groups`, {
@@ -225,7 +240,7 @@ ok(!evs().includes('Old') && !evs().includes('5125550199'), 'rides older than 1 
 
 console.log('a dispatcher edit wins over a stale server edit');
 await B.js(`__xl.type(3,'${C.call}','21:58')`); await sleep(1500);
-msgs.push({ id: String(++seq), created_at: Math.floor(Date.now() / 1000), text: `💬 test ‹sw1›{"e":"upd","id":"f2","src":"s","f":{"call":"22:05"},"was":{"call":""}}` });
+await inject(`💬 test ‹sw1›{"e":"upd","id":"f2","src":"s","f":{"call":"22:05"},"was":{"call":""}}`);
 await sleep(2500);
 ok(await B.js(`__xl.text(3,'${C.call}') === '21:58'`), 'the sheet keeps the dispatcher\'s 21:58');
 
@@ -396,8 +411,8 @@ ok((await lookupApi({ phone: '15125550170' })).rides === lk.rides && (await look
 const jt = await until(async () => { const r = await bridge(); return (r.outbox || []).find(o => o.to.endsWith('5550170')); }, 'the dashboard\'s ride gets its confirmation text');
 await bridge([], jt ? [{ outId: jt.outId, status: 'sent' }] : []);
 ok(/already has an open ride/.test((await addApi({ first: 'Jo', phone: '5125550170', pu: 'PCL', do: 'Kins' })).dup || ''), 'same phone open tonight: the dashboard is asked first');
-const replay = msgs.find(m => m.text.includes(`"id":"${ja.id}"`));
-msgs.push(Object.assign({}, replay, { id: String(++seq) })); // the request seen again (a panel reload re-reads the chat)
+const replay = chatMsgs().find(m => m.text.includes(`"id":"${ja.id}"`));
+await inject(replay.text); // the request seen again (a panel reload re-reads the chat)
 await sleep(2500);
 ok(await B.js(`SWT.X.rides.filter(x => x.f.phone === '5125550170').length === 1`), 'a request seen twice adds the ride once');
 const ka = await addApi({ first: 'Kim', phone: '5125550171', pu: 'PCL', do: 'Kins', called: true });
@@ -423,7 +438,7 @@ await until(async () => { await bridge(); const r = lia(); return r && r[ec('Out
 const lr = lia() || [];
 ok(lr[ec('Arrival')] === '22:12' && lr[ec('Wait min')] === 12 && Math.abs(lr[ec('Error min')] - (12 - lr[ec('Predicted min')])) < 0.11, `wait 12 min, error = wait − predicted (${lr[ec('Error min')]})`);
 if (C.txs) await until(() => B.js(`/^\\d{1,2}:\\d{2}$/.test(__xl.text(${lrow},'${C.txs}'))`), '"Confirmed" column: the time of Lia\'s YES');
-else ok((msgs.map(m => m.text).join('\n').match(/"txs"/g) || []).length < 40, 'no "Text" column: the status isn\'t bounced back and forth in the chat');
+else ok((evs().match(/"txs"/g) || []).length < 40, 'no "Text" column: the status isn\'t bounced back and forth in the chat');
 ok(/^\d+–\d+ min$/.test(lr[ec('Quoted in text')] || ''), 'the range quoted in the text is logged: ' + lr[ec('Quoted in text')]);
 ok(!JSON.stringify(etaRows()).match(/Lia|Eta"|5550180|Stone|5550101/), 'no names or phone numbers in the ETA log');
 ok((fs.statSync(path.join(TMP, 'state', 'eta.json')).mode & 0o077) === 0, 'eta.json readable only by the user');
@@ -534,7 +549,19 @@ await until(() => B.js(`__xl.text(${hRow},'${C.call}') === ''`), 'Undo from the 
 console.log('privacy');
 const all = evs();
 ok(!/Reply YES|SURE Walk got your ride|your ride is cancelled/i.test(all), 'no text-message content in the chat');
-ok(msgs.every(m => m.text.length <= 1000), 'every chat message under 1,000 characters');
+ok(chatMsgs().every(m => m.text.length <= 1000), 'every chat message under 1,000 characters');
+if (VIA_LAPTOP) {
+  console.log('laptop sync');
+  ok(gmChatHits === 0, 'no GroupMe chat traffic at all');
+  ok((fs.statSync(path.join(TMP, 'state', 'chat.jsonl')).mode & 0o077) === 0, 'the laptop chat file is readable only by the user');
+  ok((await lapi('/groups', { headers: { 'X-Access-Token': 'f'.repeat(32) } })).status === 401, 'a wrong laptop key is refused');
+  ok((await lapi('/groups', { headers: { Origin: 'https://evil.example' } })).status === 403, 'other websites are refused even with the key');
+  const pre = await fetch(`http://127.0.0.1:${SPORT}/v3/groups/local/messages`, { method: 'OPTIONS', headers: { Origin: 'https://script-lab.public.cdn.office.net', 'Access-Control-Request-Private-Network': 'true', 'Access-Control-Request-Headers': 'x-access-token' } });
+  ok(pre.status === 204 && pre.headers.get('access-control-allow-origin') === 'https://script-lab.public.cdn.office.net' && pre.headers.get('access-control-allow-private-network') === 'true', 'the Script Lab panel\'s preflight is allowed (local network access)');
+  const st = await (await fetch(`http://127.0.0.1:${SPORT}/api/status`, { method: 'POST', headers: { 'X-SW-Token': TOKEN } })).json();
+  ok(st.mode === 'local' && st.localKey === LKEY && st.ready && st.lastExcelAt > 0, 'dashboard: syncing with Excel on this laptop, key shown, panel seen');
+  ok((await fetch(`http://127.0.0.1:${SPORT}/v3/groups`)).status === 401, 'no key, no access');
+}
 const logRows = fs.readFileSync(path.join(TMP, 'state', 'messages.jsonl'), 'utf8').trim().split('\n').length;
 ok(logRows >= 3, `the message log stays on this computer (${logRows} rows)`);
 ok((fs.statSync(path.join(TMP, 'state', 'messages.jsonl')).mode & 0o077) === 0, 'log readable only by the user');

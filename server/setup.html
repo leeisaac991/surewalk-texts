@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>GroupMe Sync</title>
+<title>Excel Sync</title>
 <style>
   :root { --bg: #f5f5f7; --card: #fff; --text: #1d1d1f; --muted: #6e6e73; --line: #e0e0e5; --accent: #bf5700; --ok: #2e7d32; --bad: #c62828; }
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #1c1c1e; --card: #2c2c2e; --text: #f5f5f7; --muted: #a1a1a6; --line: #3a3a3c; --accent: #ff8a3d; --ok: #66bb6a; --bad: #ef5350; } }
@@ -19,19 +19,31 @@
   .msg { font-size: 13px; margin-top: 10px; } .err { color: var(--bad); } .ok { color: var(--ok); }
   dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; font-size: 14px; } dt { color: var(--muted); }
   ul { padding-left: 18px; color: var(--muted); font-size: 13px; margin: 0; }
+  .key { font: 600 16px ui-monospace, Consolas, monospace; letter-spacing: .5px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; word-break: break-all; flex: 1; }
+  details > summary { cursor: pointer; font-weight: 600; } details[open] > summary { margin-bottom: 12px; }
+  .tag { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 99px; background: var(--ok); color: #fff; margin-left: 6px; }
 </style>
 </head>
 <body>
 <main>
-  <h1>GroupMe sync</h1>
-  <p>New rides come from the Excel sheet through one GroupMe chat. Changes made here (Call Time, cancels, duplicates,
-    pick-up / drop-off fixes) go back to the sheet through the same chat. Texts with riders never go there.</p>
+  <h1>Sync with Excel</h1>
+  <p>New rides come from the Excel sheet, and changes made here (Call Time, cancels, duplicates, pick-up / drop-off
+    fixes) go back to it. Texts with riders never go to Excel.</p>
 
   <div class="card">
     <dl id="st"><dt>Status</dt><dd>…</dd></dl>
   </div>
 
-  <div class="card">
+  <div class="card" id="localCard">
+    <h1 style="font-size:17px">Excel on this laptop <span class="tag" id="localTag" hidden>In use</span></h1>
+    <p>The Excel texts panel on this laptop talks straight to this texting server. No GroupMe, and ride data stays on
+      this laptop. In Excel: the texts panel ▸ Auto-text ▸ <b>Connect</b> ▸ <b>This laptop</b>, then paste this key.</p>
+    <div class="row"><div class="key" id="key">…</div><button id="copy">Copy</button></div>
+    <div class="row" style="margin-top:12px"><button id="useLocal">Use this laptop</button><button class="ghost" id="newKey">New key</button></div>
+    <div id="lmsg" class="msg" role="status"></div>
+  </div>
+
+  <details class="card" id="gmCard"><summary>Use a GroupMe chat instead (older)</summary>
     <label>GroupMe token
       <input id="tok" type="password" autocomplete="off" placeholder="Paste your token (web.groupme.com ▸ F12 ▸ Network ▸ X-Access-Token)">
     </label>
@@ -41,12 +53,12 @@
     </label>
     <div class="row"><button id="save">Save & start syncing</button><button class="ghost" id="off">Stop syncing</button></div>
     <div id="msg" class="msg" role="status"></div>
-  </div>
+  </details>
 
   <div class="card">
     <ul>
-      <li>Use a chat made only for this (for example "SURE Walk Texts sync"), with only the people who need it.</li>
-      <li>The token stays on this computer (~/.config/surewalk-texts, readable only by you).</li>
+      <li>The laptop key only works on this laptop. Anyone who has it can sync rides with this server, so don't share it; <b>New key</b> replaces it (then paste the new one in Excel).</li>
+      <li>GroupMe: use a chat made only for this (for example "SURE Walk Texts sync"), with only the people who need it. The token stays on this computer.</li>
       <li><a href="/">Back to the texting dashboard</a></li>
     </ul>
   </div>
@@ -65,11 +77,14 @@
   $('tok').addEventListener('paste', () => setTimeout(() => { $('tok').value = cleanTok($('tok').value); }, 0));
   async function refresh() {
     const s = await post('/api/status');
+    const local = s.mode === 'local';
+    $('key').textContent = s.localKey; $('localTag').hidden = !local; $('useLocal').hidden = local;
+    if (!local) $('gmCard').open = true;
     $('st').innerHTML = `<dt>Status</dt><dd class="${s.lastError ? 'err' : s.ready ? 'ok' : ''}">${esc(!s.configured ? 'Not set up' : s.lastError || (s.ready ? 'Syncing' : 'Reading the chat…'))}</dd>
-      <dt>Chat</dt><dd>${esc(s.group || '—')}</dd><dt>Tonight's rides</dt><dd>${s.rides}</dd>
+      <dt>Sync with</dt><dd>${esc(local ? 'Excel on this laptop (no GroupMe)' : 'GroupMe chat: ' + (s.group || '—'))}</dd><dt>Tonight's rides</dt><dd>${s.rides}</dd>
       <dt>Last from Excel</dt><dd>${ago(s.lastExcelAt)}</dd><dt>Checked</dt><dd>${ago(s.lastPollAt)}</dd>
       <dt>Waiting to post</dt><dd>${s.waiting}</dd>`;
-    if (s.groupId && !$('grp').value) $('grp').innerHTML = `<option value="${esc(s.groupId)}">${esc(s.group)}</option>`;
+    if (!local && s.groupId && !$('grp').value) $('grp').innerHTML = `<option value="${esc(s.groupId)}">${esc(s.group)}</option>`;
   }
   $('load').onclick = async () => {
     say('Checking…');
@@ -88,7 +103,11 @@
     if (r.ok === false) return say(r.error, 'err');
     $('tok').value = ''; say('Saved — reading tonight\'s rides from the chat.', 'ok'); refresh();
   };
-  $('off').onclick = async () => { if (!confirm('Stop syncing and forget the token on this computer?')) return; await post('/api/config', { off: true }); say('Stopped.'); refresh(); };
+  $('off').onclick = async () => { if (!confirm('Stop using GroupMe and forget the token on this computer? Sync switches to Excel on this laptop.')) return; await post('/api/config', { off: true }); say('GroupMe forgotten.'); refresh(); };
+  const lsay = (t, cls) => { $('lmsg').className = 'msg ' + (cls || ''); $('lmsg').textContent = t; };
+  $('copy').onclick = async () => { try { await navigator.clipboard.writeText($('key').textContent); lsay('Copied. Paste it in the Excel texts panel.', 'ok'); } catch (e) { lsay('Select the key and copy it (Ctrl+C).'); } };
+  $('useLocal').onclick = async () => { await post('/api/config', { mode: 'local' }); lsay('Now syncing with Excel on this laptop.', 'ok'); refresh(); };
+  $('newKey').onclick = async () => { if (!confirm('Make a new laptop key? The Excel panel stops syncing until you paste the new key there.')) return; await post('/api/config', { newKey: true }); lsay('New key made. Copy it into the Excel panel.', 'ok'); refresh(); };
   refresh(); setInterval(refresh, 4000);
 </script>
 </body>
