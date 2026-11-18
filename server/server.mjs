@@ -11,7 +11,7 @@
  *
  *   node server/server.mjs [--open]       run (and open the dashboard in the browser)
  *   node server/server.mjs link-bridge    point the phone bridge at this server (keeps a copy of its old config)
- * Env: PORT (8787), SUREWALK_GS (the .gs folder), SUREWALK_STATE (~/.local/state/surewalk-texts).
+ * Env: PORT (8787), SUREWALK_GS (the .gs folder), SUREWALK_STATE (~/.local/state/surewalk-texts; Windows: %LOCALAPPDATA%\\surewalk-texts).
  */
 process.env.TZ = 'America/Chicago';
 import http from 'node:http';
@@ -32,8 +32,10 @@ const gasLib = require('./gas.js');
 const PORT = Number(process.env.PORT || 8787);
 const HOME = os.homedir();
 const GS = process.env.SUREWALK_GS || path.join(HOME, 'Documents/surewalk/texting/apps-script');
-const STATE = process.env.SUREWALK_STATE || path.join(process.env.XDG_STATE_HOME || path.join(HOME, '.local/state'), 'surewalk-texts');
-const CONF_FILE = path.join(process.env.XDG_CONFIG_HOME || path.join(HOME, '.config'), 'surewalk-texts', 'config.json');
+const WIN = process.platform === 'win32'; // Windows: everything under %LOCALAPPDATA% (no admin, per user)
+const LOCAL = process.env.LOCALAPPDATA || path.join(HOME, 'AppData', 'Local');
+const STATE = process.env.SUREWALK_STATE || (WIN ? path.join(LOCAL, 'surewalk-texts') : path.join(process.env.XDG_STATE_HOME || path.join(HOME, '.local/state'), 'surewalk-texts'));
+const CONF_FILE = WIN ? path.join(LOCAL, 'surewalk-texts', 'config.json') : path.join(process.env.XDG_CONFIG_HOME || path.join(HOME, '.config'), 'surewalk-texts', 'config.json');
 const GM_API = process.env.GROUPME_API || 'https://api.groupme.com/v3';
 const POLL_MS = Number(process.env.SW_POLL_MS || 3000), POST_GAP_MS = Number(process.env.SW_POST_GAP_MS || 1200);
 const log = (...a) => console.log(new Date().toLocaleTimeString('en-US', { hour12: false }), ...a);
@@ -409,14 +411,14 @@ const server = http.createServer(async (req, res) => {
 /* ---------------- commands ---------------- */
 function linkBridge() {
   const key = PropertiesService.getScriptProperties().getProperty('TX_KEY');
-  const dir = path.join(process.env.XDG_CONFIG_HOME || path.join(HOME, '.config'), 'surewalk-bridge'), file = path.join(dir, 'config.json');
+  const dir = WIN ? path.join(LOCAL, 'surewalk-bridge') : path.join(process.env.XDG_CONFIG_HOME || path.join(HOME, '.config'), 'surewalk-bridge'), file = path.join(dir, 'config.json');
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   if (fs.existsSync(file)) {
     const old = fs.readFileSync(file, 'utf8');
     if (!old.includes('127.0.0.1')) fs.writeFileSync(path.join(dir, 'config.google.json'), old, { mode: 0o600 });
   }
   fs.writeFileSync(file, JSON.stringify({ url: `http://127.0.0.1:${PORT}/bridge`, key }, null, 2), { mode: 0o600 });
-  console.log(`The phone bridge now talks to http://127.0.0.1:${PORT}/bridge (old config kept as config.google.json).\nRestart it: systemctl --user restart surewalk-bridge`);
+  console.log(`The phone bridge now talks to http://127.0.0.1:${PORT}/bridge (old config kept as config.google.json).\nRestart it: ` + (WIN ? 'STOP-TEXTING.cmd, then START-TEXTING.cmd' : 'systemctl --user restart surewalk-bridge'));
 }
 
 loadCode();
@@ -452,9 +454,10 @@ if (cmd === 'test-text') {
 server.listen(PORT, '127.0.0.1', () => {
   log(`SURE Walk Texts: http://127.0.0.1:${PORT}  (log + settings in ${STATE})`);
   if (!conf.groupId) log('GroupMe sync chat not set yet: open the dashboard ▸ GroupMe sync.');
-  if (process.argv.includes('--open')) spawn('xdg-open', [`http://127.0.0.1:${PORT}/`], { stdio: 'ignore', detached: true }).unref();
+  if (process.argv.includes('--open')) spawn(WIN ? 'explorer.exe' : 'xdg-open', [`http://127.0.0.1:${PORT}/`], { stdio: 'ignore', detached: true }).unref();
 });
 loop();
 setInterval(loop, POLL_MS);
 process.on('SIGTERM', () => { gas.flush(); process.exit(0); });
 process.on('SIGINT', () => { gas.flush(); process.exit(0); });
+process.on('SIGHUP', () => { gas.flush(); process.exit(0); }); // Windows: the server's console window was closed
