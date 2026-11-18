@@ -36,6 +36,9 @@ rem The bridge exits by itself if one is already running.
 start "SURE Walk phone bridge" /min powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%APP%\windows\bridge.ps1"
 echo Phone bridge started.
 
+rem Newer release on GitHub? Asked in a popup by a separate process, so this file can be replaced safely.
+start "" /min powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%APP%\windows\update.ps1" -Check
+
 if /i "%~1"=="nobrowser" exit /b 0
 for /l %%i in (1,1,30) do (
   curl -s -o nul -m 1 "%URL%" && goto :open

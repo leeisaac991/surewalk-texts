@@ -11,16 +11,24 @@
 #   ... -Device "PARK"              pick the phone by (part of) its Bluetooth name
 #   ... -TestTcp 127.0.0.1:9400     talk to a pretend phone over TCP instead of Bluetooth (tests)
 #   ... -StateDir <folder>          where config.json / state.json live (default %LOCALAPPDATA%\surewalk-bridge)
+#   ... -DialOnce 5125550101        just have the iPhone dial that number, then exit (TEST-CALL.cmd)
+#   ... -TestHfpTcp 127.0.0.1:9401  calling against a pretend phone over TCP (tests)
+#
+# Calls: the dashboard's Call button makes the iPhone dial, the way a car does (Hands-Free Profile over the
+# iPhone's hands-free service). The bridge lets go right after the iPhone starts dialing, so the call and its
+# audio stay on the iPhone. It can't hang up or tell when the rider answers.
 #
 # Keeps (in the state folder): texts already forwarded (as hashes), anything not yet delivered.
 # Its log (bridge.log) never contains message text or phone numbers.
 param(
   [string]$Device = '',
   [string]$TestTcp = '',
-  [string]$StateDir = ''
+  [string]$StateDir = '',
+  [string]$DialOnce = '',
+  [string]$TestHfpTcp = ''
 )
 $ErrorActionPreference = 'Stop'
-$Version = 'win-2026.11.17'
+$Version = 'win-2026.11.18'
 $SendGapMs = 3000                       # between texts in one batch (the server paces too)
 $ForwardWindowMs = 2 * 3600 * 1000      # after a restart, unseen texts up to 2 h old are still forwarded
 $ListCount = 40                         # newest inbox entries looked at each poll
@@ -47,28 +55,6 @@ function Msg($err) {
 }
 function NowMs { return [long]([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()) }
 
-# ------------------------------------------------------------ one bridge at a time
-$mutexName = 'Local\SureWalkPhoneBridge'; if ($TestTcp) { $mutexName += 'Test' }   # tests can run next to the real bridge
-$mutex = New-Object System.Threading.Mutex($false, $mutexName)
-if (-not $mutex.WaitOne(0)) { Log 'Another phone bridge is already running - this one exits.'; exit 0 }
-
-# ------------------------------------------------------------ config + state
-if (-not (Test-Path $CfgFile)) { Log "No config at $CfgFile - run START-TEXTING.cmd (it links the bridge to the server)."; exit 1 }
-$Cfg = Get-Content -Raw -Encoding UTF8 $CfgFile | ConvertFrom-Json
-if (-not ($Cfg.url -match '^http://(127\.0\.0\.1|localhost):\d+/') -or ([string]$Cfg.key).Length -lt 32) { Log "$CfgFile needs the local server URL and its key."; exit 1 }
-
-$State = @{ seen = (New-Object System.Collections.Generic.List[string]); inbound = (New-Object System.Collections.ArrayList); results = (New-Object System.Collections.ArrayList); seeded = $false }
-if (Test-Path $StateFile) {
-  try {
-    $d = Get-Content -Raw -Encoding UTF8 $StateFile | ConvertFrom-Json
-    foreach ($s in @($d.seen)) { if ($s) { $State.seen.Add([string]$s) } }
-    foreach ($m in @($d.inbound)) { if ($m) { $null = $State.inbound.Add(@{ id = [string]$m.id; from = [string]$m.from; text = [string]$m.text; ts = [long]$m.ts }) } }
-    foreach ($r in @($d.results)) { if ($r) { $null = $State.results.Add(@{ outId = $r.outId; status = [string]$r.status; error = [string]$r.error }) } }
-    $State.seeded = [bool]$d.seeded
-  } catch { Log ("state.json unreadable, starting fresh: " + (Msg $_)) }
-}
-$Seen = New-Object 'System.Collections.Generic.HashSet[string]'
-foreach ($s in $State.seen) { $null = $Seen.Add($s) }
 function Save-State {
   while ($State.seen.Count -gt 5000) { $State.seen.RemoveAt(0) }
   $obj = @{ seen = @($State.seen); inbound = @($State.inbound); results = @($State.results); seeded = $State.seeded }
@@ -80,7 +66,7 @@ function Save-State {
 function Mark-Seen([string]$id) { if ($Seen.Add($id)) { $State.seen.Add($id) } }
 
 # ------------------------------------------------------------ Windows Bluetooth (WinRT) helpers
-if (-not $TestTcp) {
+if (-not ($TestTcp -or $TestHfpTcp)) {
   Add-Type -AssemblyName System.Runtime.WindowsRuntime
   $ext = [System.WindowsRuntimeSystemExtensions].GetMethods()
   $script:AsTaskOp = $ext | Where-Object { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' } | Select-Object -First 1
@@ -101,6 +87,41 @@ function Await($op, [Type]$type, [int]$ms = 15000) {
 function AwaitAction($op, [int]$ms = 15000) {
   $task = $script:AsTaskAct.Invoke($null, @($op))
   if (-not $task.Wait($ms)) { throw ("timed out after " + ($ms / 1000) + " s") }
+}
+
+# ------------------------------------------------------------ the paired iPhone, and a Bluetooth connection to one of its services
+function Find-Phones {
+  $BtDev = T 'Windows.Devices.Bluetooth.BluetoothDevice'
+  $DevInfo = T 'Windows.Devices.Enumeration.DeviceInformation'
+  $coll = Await ($DevInfo::FindAllAsync($BtDev::GetDeviceSelectorFromPairingState($true))) (T 'Windows.Devices.Enumeration.DeviceInformationCollection')
+  $phones = @()
+  foreach ($di in $coll) {
+    $d = Await ($BtDev::FromIdAsync($di.Id)) $BtDev
+    if (-not $d) { continue }
+    $ok = ("$($d.ClassOfDevice.MajorClass)" -eq 'Phone') -or ($d.Name -match 'iPhone')
+    if ($Device) { $ok = $d.Name -like "*$Device*" }
+    if ($ok) { $phones += $d }
+  }
+  if (-not $phones.Count) { throw 'no paired phone (pair the iPhone in Settings > Bluetooth & devices)' }
+  return , $phones
+}
+# Opens an RFCOMM connection to one of the iPhone's services (0x1132 messages, 0x111F hands-free) -> @{ sock; w; r; name }
+function Bt-Connect([int]$shortId, [string]$what) {
+  $Cache = T 'Windows.Devices.Bluetooth.BluetoothCacheMode'
+  $SvcId = T 'Windows.Devices.Bluetooth.Rfcomm.RfcommServiceId'
+  $Res = T 'Windows.Devices.Bluetooth.Rfcomm.RfcommDeviceServicesResult'
+  $svc = $null; $name = ''
+  foreach ($ph in (Find-Phones)) {
+    $r = Await ($ph.GetRfcommServicesForIdAsync($SvcId::FromShortId($shortId), $Cache::Uncached)) $Res 20000
+    if ($r.Services -and $r.Services.Count -gt 0) { $svc = $r.Services[0]; $name = $ph.Name; break }
+  }
+  if (-not $svc) { throw "the iPhone is not reachable for $what (Bluetooth on, nearby, unlocked once?)" }
+  $sock = [Activator]::CreateInstance((T 'Windows.Networking.Sockets.StreamSocket'))
+  AwaitAction ($sock.ConnectAsync($svc.ConnectionHostName, $svc.ConnectionServiceName, (T 'Windows.Networking.Sockets.SocketProtectionLevel')::BluetoothEncryptionAllowNullAuthentication)) 30000
+  # PowerShell can't match these constructors itself; reflection can.
+  $w = (T 'Windows.Storage.Streams.DataWriter').GetConstructor([Type[]]@((T 'Windows.Storage.Streams.IOutputStream'))).Invoke(@($sock.OutputStream))
+  $r = (T 'Windows.Storage.Streams.DataReader').GetConstructor([Type[]]@((T 'Windows.Storage.Streams.IInputStream'))).Invoke(@($sock.InputStream))
+  return @{ sock = $sock; w = $w; r = $r; name = $name }
 }
 
 # ------------------------------------------------------------ transport: Bluetooth RFCOMM, or TCP for tests
@@ -197,33 +218,8 @@ function Phone-Open {
     $tcp.Connect($hp[0], [int]$hp[1])
     $script:Link = @{ kind = 'tcp'; tcp = $tcp; ns = $tcp.GetStream(); name = 'test phone'; cid = $null; max = 0x2000 }
   } else {
-    $BtDev = T 'Windows.Devices.Bluetooth.BluetoothDevice'
-    $DevInfo = T 'Windows.Devices.Enumeration.DeviceInformation'
-    $Cache = T 'Windows.Devices.Bluetooth.BluetoothCacheMode'
-    $SvcId = T 'Windows.Devices.Bluetooth.Rfcomm.RfcommServiceId'
-    $Res = T 'Windows.Devices.Bluetooth.Rfcomm.RfcommDeviceServicesResult'
-    $coll = Await ($DevInfo::FindAllAsync($BtDev::GetDeviceSelectorFromPairingState($true))) (T 'Windows.Devices.Enumeration.DeviceInformationCollection')
-    $phones = @()
-    foreach ($di in $coll) {
-      $d = Await ($BtDev::FromIdAsync($di.Id)) $BtDev
-      if (-not $d) { continue }
-      $ok = ("$($d.ClassOfDevice.MajorClass)" -eq 'Phone') -or ($d.Name -match 'iPhone')
-      if ($Device) { $ok = $d.Name -like "*$Device*" }
-      if ($ok) { $phones += $d }
-    }
-    if (-not $phones.Count) { throw 'no paired phone (pair the iPhone in Settings > Bluetooth & devices)' }
-    $svc = $null; $name = ''
-    foreach ($ph in $phones) {
-      $r = Await ($ph.GetRfcommServicesForIdAsync($SvcId::FromShortId(0x1132), $Cache::Uncached)) $Res 20000
-      if ($r.Services -and $r.Services.Count -gt 0) { $svc = $r.Services[0]; $name = $ph.Name; break }
-    }
-    if (-not $svc) { throw 'the iPhone is not reachable (Bluetooth on, nearby, unlocked once?)' }
-    $sock = [Activator]::CreateInstance((T 'Windows.Networking.Sockets.StreamSocket'))
-    AwaitAction ($sock.ConnectAsync($svc.ConnectionHostName, $svc.ConnectionServiceName, (T 'Windows.Networking.Sockets.SocketProtectionLevel')::BluetoothEncryptionAllowNullAuthentication)) 30000
-    # PowerShell can't match these constructors itself; reflection can.
-    $w = (T 'Windows.Storage.Streams.DataWriter').GetConstructor([Type[]]@((T 'Windows.Storage.Streams.IOutputStream'))).Invoke(@($sock.OutputStream))
-    $r = (T 'Windows.Storage.Streams.DataReader').GetConstructor([Type[]]@((T 'Windows.Storage.Streams.IInputStream'))).Invoke(@($sock.InputStream))
-    $script:Link = @{ kind = 'bt'; sock = $sock; w = $w; r = $r; name = $name; cid = $null; max = 0x2000 }
+    $bt = Bt-Connect 0x1132 'the message service'
+    $script:Link = @{ kind = 'bt'; sock = $bt.sock; w = $bt.w; r = $bt.r; name = $bt.name; cid = $null; max = 0x2000 }
   }
   $b = NewBuf
   $b.AddRange([byte[]](0x10, 0x00, 0x20, 0x00)); AddHdr $b 0x46 $MAS_UUID
@@ -374,6 +370,61 @@ function Phone-Send([string]$to, [string]$body) {
   }
 }
 
+# ------------------------------------------------------------ calling (Hands-Free Profile, dial only)
+function Hfp-Open {
+  if ($TestHfpTcp) {
+    $hp = $TestHfpTcp.Split(':'); $tcp = New-Object System.Net.Sockets.TcpClient; $tcp.Connect($hp[0], [int]$hp[1])
+    return @{ kind = 'tcp'; tcp = $tcp; ns = $tcp.GetStream() }
+  }
+  $bt = Bt-Connect 0x111F 'calls'
+  $bt.r.InputStreamOptions = (T 'Windows.Storage.Streams.InputStreamOptions')::Partial
+  return @{ kind = 'bt'; sock = $bt.sock; w = $bt.w; r = $bt.r }
+}
+function Hfp-Send($H, [string]$cmd) {
+  if ($H.kind -eq 'tcp') { $b = [System.Text.Encoding]::ASCII.GetBytes($cmd + "`r"); $H.ns.Write($b, 0, $b.Length); return }
+  $H.w.WriteString($cmd + "`r"); $null = Await ($H.w.StoreAsync()) ([uint32]) 10000
+}
+# Reads until the phone's final answer (OK / ERROR / +CME ERROR); other lines (indicator events) are skipped.
+function Hfp-Wait($H, [int]$ms) {
+  $buf = ''; $end = (Get-Date).AddMilliseconds($ms)
+  while ((Get-Date) -lt $end) {
+    if ($H.kind -eq 'tcp') {
+      if ($H.ns.DataAvailable) { $b = New-Object byte[] 1024; $n = $H.ns.Read($b, 0, 1024); $buf += [System.Text.Encoding]::ASCII.GetString($b, 0, $n) }
+      else { Start-Sleep -Milliseconds 30 }
+    } else {
+      $left = [int]($end - (Get-Date)).TotalMilliseconds; if ($left -lt 200) { $left = 200 }
+      $n = Await ($H.r.LoadAsync(1024)) ([uint32]) $left
+      if ($n -gt 0) { $buf += $H.r.ReadString($n) }
+    }
+    if ($buf -match '(?:\r\n|^)(OK|ERROR|\+CME ERROR[^\r]*)\r\n') { return $Matches[1] }
+  }
+  throw 'the iPhone did not answer'
+}
+function Hfp-Close($H) {
+  if (-not $H) { return }
+  try { if ($H.kind -eq 'tcp') { $H.tcp.Close() } else { $H.sock.Dispose() } } catch {}
+}
+# Has the iPhone dial a number -> @{ ok; error }. Sets up the hands-free link, dials, lets go once dialing has started.
+function Phone-Dial([string]$number) {
+  $n = $number -replace '[\s().-]', ''
+  if ($n -notmatch '^\+?\d{3,15}$') { return @{ ok = $false; error = 'not a phone number' } }
+  $H = $null
+  try {
+    $H = Hfp-Open
+    foreach ($c in 'AT+BRSF=0', 'AT+CIND=?', 'AT+CIND?', 'AT+CMER=3,0,0,1') {
+      Hfp-Send $H $c
+      $a = Hfp-Wait $H 8000
+      if ($a -ne 'OK') { return @{ ok = $false; error = "the iPhone refused the calling setup ($a)" } }
+    }
+    Hfp-Send $H ("ATD" + $n + ";")
+    $a = Hfp-Wait $H 15000
+    if ($a -ne 'OK') { return @{ ok = $false; error = "the iPhone would not dial ($a)" } }
+    Start-Sleep -Milliseconds 1500     # let the call get going before letting go of it
+    return @{ ok = $true; error = '' }
+  } catch { return @{ ok = $false; error = (Msg $_) } }
+  finally { Hfp-Close $H }
+}
+
 # ------------------------------------------------------------ the texting server
 function Server-Sync($payload) {
   $wc = New-Object System.Net.WebClient
@@ -388,6 +439,37 @@ function Server-Sync($payload) {
   if (-not $data) { throw 'the texting server refused the key (run STOP-TEXTING.cmd then START-TEXTING.cmd to relink)' }
   return $data
 }
+
+# ------------------------------------------------------------ TEST-CALL.cmd: dial one number and exit (no server, no state)
+if ($DialOnce) {
+  Log 'test call: asking the iPhone to dial'
+  $r = Phone-Dial $DialOnce
+  if ($r.ok) { Log 'test call: the iPhone is dialing'; exit 0 }
+  Log ("test call failed: " + $r.error); exit 1
+}
+
+# ------------------------------------------------------------ one bridge at a time
+$mutexName = 'Local\SureWalkPhoneBridge'; if ($TestTcp) { $mutexName += 'Test' }   # tests can run next to the real bridge
+$mutex = New-Object System.Threading.Mutex($false, $mutexName)
+if (-not $mutex.WaitOne(0)) { Log 'Another phone bridge is already running - this one exits.'; exit 0 }
+
+# ------------------------------------------------------------ config + state
+if (-not (Test-Path $CfgFile)) { Log "No config at $CfgFile - run START-TEXTING.cmd (it links the bridge to the server)."; exit 1 }
+$Cfg = Get-Content -Raw -Encoding UTF8 $CfgFile | ConvertFrom-Json
+if (-not ($Cfg.url -match '^http://(127\.0\.0\.1|localhost):\d+/') -or ([string]$Cfg.key).Length -lt 32) { Log "$CfgFile needs the local server URL and its key."; exit 1 }
+
+$State = @{ seen = (New-Object System.Collections.Generic.List[string]); inbound = (New-Object System.Collections.ArrayList); results = (New-Object System.Collections.ArrayList); seeded = $false }
+if (Test-Path $StateFile) {
+  try {
+    $d = Get-Content -Raw -Encoding UTF8 $StateFile | ConvertFrom-Json
+    foreach ($s in @($d.seen)) { if ($s) { $State.seen.Add([string]$s) } }
+    foreach ($m in @($d.inbound)) { if ($m) { $null = $State.inbound.Add(@{ id = [string]$m.id; from = [string]$m.from; text = [string]$m.text; ts = [long]$m.ts }) } }
+    foreach ($r in @($d.results)) { if ($r) { $null = $State.results.Add(@{ outId = $r.outId; status = [string]$r.status; error = [string]$r.error }) } }
+    $State.seeded = [bool]$d.seeded
+  } catch { Log ("state.json unreadable, starting fresh: " + (Msg $_)) }
+}
+$Seen = New-Object 'System.Collections.Generic.HashSet[string]'
+foreach ($s in $State.seen) { $null = $Seen.Add($s) }
 
 # ------------------------------------------------------------ main loop
 Log "SURE Walk phone bridge $Version starting (state: $StateDir)"
@@ -462,7 +544,13 @@ try {
       Save-State
       if ($i -lt $outbox.Count - 1) { Start-Sleep -Milliseconds $SendGapMs }
     }
-    if ($resp.dial) { foreach ($d in @($resp.dial)) { if ($d) { Log 'a call was requested - calling from the laptop is not supported; call from the iPhone' } } }
+    if ($resp.dial) {
+      foreach ($d in @($resp.dial)) {
+        if (-not $d) { continue }
+        $r = Phone-Dial ([string]$d.number)
+        if ($r.ok) { Log 'call: the iPhone is dialing a rider' } else { Log ("call failed: " + $r.error) }
+      }
+    }
     if ($outbox.Count) { continue }   # report the outcomes right away
     Start-Sleep -Milliseconds ([int]($poll * 1000))
   }

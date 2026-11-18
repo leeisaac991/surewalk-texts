@@ -106,3 +106,35 @@ export function fakePhone({ port, maxPacket = 0x2000, refuse = 0 } = {}) {
     close: () => new Promise(r => { st.sockets.forEach(s => s.destroy()); server.close(() => r()); }),
   }))));
 }
+
+// The iPhone's hands-free side (HFP Audio Gateway) for calling tests: answers the link setup, records ATD numbers.
+//   const ag = await fakeAg({ port, refuseDial }); ag.dialed -> ['+15125550101', …]; ag.commands -> every AT command seen
+export function fakeAg({ port, refuseDial = false, refuseSetup = false } = {}) {
+  const st = { dialed: [], commands: [], sockets: new Set() };
+  const server = net.createServer(sock => {
+    st.sockets.add(sock); sock.on('close', () => st.sockets.delete(sock)); sock.on('error', () => {});
+    let buf = '';
+    const say = (...lines) => sock.write(lines.map(l => '\r\n' + l + '\r\n').join(''));
+    sock.on('data', d => {
+      buf += d.toString('ascii');
+      let i;
+      while ((i = buf.indexOf('\r')) >= 0) {
+        const cmd = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
+        if (!cmd) continue;
+        st.commands.push(cmd);
+        if (refuseSetup && cmd.startsWith('AT+BRSF')) { say('ERROR'); continue; }
+        if (/^AT\+BRSF=\d+$/.test(cmd)) say('+BRSF: 871', 'OK');
+        else if (cmd === 'AT+CIND=?') say('+CIND: ("service",(0,1)),("call",(0,1)),("callsetup",(0-3)),("battchg",(0-5)),("signal",(0-5)),("roam",(0,1)),("callheld",(0-2))', 'OK');
+        else if (cmd === 'AT+CIND?') say('+CIND: 1,0,0,5,4,0,0', 'OK');
+        else if (/^AT\+CMER=/.test(cmd)) say('OK');
+        else if (/^ATD[+\d]+;$/.test(cmd)) {
+          if (refuseDial) say('ERROR');
+          else { st.dialed.push(cmd.slice(3, -1)); say('OK'); setTimeout(() => say('+CIEV: 3,2'), 100); }
+        } else say('ERROR');
+      }
+    });
+  });
+  return new Promise(res => server.listen(port, '127.0.0.1', () => res(Object.assign(st, {
+    close: () => new Promise(r => { st.sockets.forEach(s => s.destroy()); server.close(() => r()); }),
+  }))));
+}
