@@ -11,7 +11,7 @@
  *
  *   node server/server.mjs [--open]       run (and open the dashboard in the browser)
  *   node server/server.mjs link-bridge    point the phone bridge at this server (keeps a copy of its old config)
- * Env: PORT (8787), SUREWALK_GS (the .gs folder), SUREWALK_STATE (~/.local/state/surewalk-texts; Windows: %LOCALAPPDATA%\\surewalk-texts).
+ * Env: PORT (8787), SUREWALK_GS (the .gs folder), SUREWALK_STATE (~/.local/state/surewalk-texts; Windows: %LOCALAPPDATA%\surewalk-texts).
  */
 process.env.TZ = 'America/Chicago';
 import http from 'node:http';
