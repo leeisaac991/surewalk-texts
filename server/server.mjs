@@ -300,7 +300,7 @@ const send = (res, code, body, type = 'application/json; charset=utf-8', extra =
 };
 
 function dashboardHtml() {
-  const shim = fs.readFileSync(path.join(HERE, 'shim.js'), 'utf8').replace('__TOKEN__', TOKEN);
+  const shim = fs.readFileSync(path.join(HERE, 'shim.js'), 'utf8').replace('__TOKEN__', TOKEN).replace("'__LEGACY__'", WIN ? 'false' : 'true');
   return fs.readFileSync(path.join(GS, 'Dashboard.html'), 'utf8')
     .replace(/<base[^>]*>/i, '')
     .replace(/https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec/g, '/')
@@ -487,6 +487,7 @@ if (cmd === 'test-text') {
 }
 server.listen(PORT, '127.0.0.1', () => {
   log(`SURE Walk Texts: http://127.0.0.1:${PORT}  (log + settings in ${STATE})`);
+  if (!WIN) log('⚠ DEPRECATED: the Linux texting computer is a backup only. SURE Walk Texts is developed for Windows now (windows/ — START-TEXTING.cmd on the laptop); no new features land here first.');
   if (!conf.groupId) log('GroupMe sync chat not set yet: open the dashboard ▸ GroupMe sync.');
   if (process.argv.includes('--open')) spawn(WIN ? 'explorer.exe' : 'xdg-open', [`http://127.0.0.1:${PORT}/`], { stdio: 'ignore', detached: true }).unref();
 });
