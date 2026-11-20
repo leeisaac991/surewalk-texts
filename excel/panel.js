@@ -89,13 +89,17 @@
   function rowTs(col, v, t) {
     if (col.ts) { const x = v[col.ts - 1]; return typeof x === 'number' && x > 1 ? serialToWall(x) : textToWall(t[col.ts - 1]); }
     const dv = v[col.date - 1], dt = String(t[col.date - 1] == null ? '' : t[col.date - 1]).trim();
-    let day = '';
-    if (typeof dv === 'number' && dv > 1) day = serialToWall(Math.floor(dv)).slice(0, 10);
-    else { const m = /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/.exec(dt) || /^(\d{4})-(\d{2})-(\d{2})$/.exec(dt);
+    let day = '', timeFromDate = '';
+    if (typeof dv === 'number' && dv > 1) {
+      const wall = serialToWall(dv);
+      day = wall.slice(0, 10);
+      if (dv % 1 > 0.00001) timeFromDate = wall.slice(11, 19);
+    } else { const m = /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/.exec(dt) || /^(\d{4})-(\d{2})-(\d{2})$/.exec(dt);
       if (m) day = m[1].length === 4 ? `${m[1]}-${m[2]}-${m[3]}` : `${m[3].length === 2 ? '20' + m[3] : m[3]}-${pad(m[1])}-${pad(m[2])}`; }
-    const tm = hm(v[col.stime - 1], t[col.stime - 1]), mt = /^(\d{1,2}):(\d{2})$/.exec(tm);
-    if (!day || !mt || +mt[1] > 23) return '';
-    return `${day} ${pad(mt[1])}:${mt[2]}:00`;
+    const tm = col.stime ? hm(v[col.stime - 1], t[col.stime - 1]) : '', mt = /^(\d{1,2}):(\d{2})$/.exec(tm);
+    const hms = (mt && +mt[1] <= 23) ? `${pad(mt[1])}:${mt[2]}:00` : timeFromDate;
+    if (!day || !hms) return '';
+    return `${day} ${hms.slice(0, 5)}:00`;
   }
   const letter = n => { let s = ''; while (n) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; };
   // The ride's key: 'f' + the form's Id, or (no Id: a row added by hand) its time + the phone's last 4 digits (+ row).
@@ -442,18 +446,19 @@
     verified: 'I understand and have verified my pick-up location.', food: 'I understand.' };
   async function addRide(a, quiet) { // a: first last phone eid pu do ada notes, call ('H:MM' or ''), disp, by
     await readSheet();
-    const col = X.col, w = SWP.austin(), lastRide = X.rides.length ? Math.max(...X.rides.map(r => r.row)) : 0;
+    const col = X.col, w = a.ts || SWP.austin(), lastRide = X.rides.length ? Math.max(...X.rides.map(r => r.row)) : 0;
     const vals = {}; // column -> value
     const put = (k, v) => {
       if (typeof v === 'string') v = v.replace(/^[=+@-]+/, '').trim(); // typed text never becomes a formula
       if (col[k] && v !== '' && v != null) vals[col[k]] = v;
     };
-    if (col.ts) put('ts', wallToSerial(w)); else { put('date', Math.floor(wallToSerial(w))); put('stime', hmToSerial(`${+w.slice(11, 13)}:${w.slice(14, 16)}`)); }
+    if (col.ts) put('ts', wallToSerial(w));
+    else put('date', wallToSerial(w)); // Date cell contains full date+time serial; stime (=MOD([@Date], 1)) fills automatically
     ['first', 'last', 'phone', 'eid', 'email', 'pu', 'do', 'ada'].forEach(k => put(k, a[k]));
     Object.keys(AGREE).forEach(k => put(k, AGREE[k]));
     if (/^\d{1,2}:\d{2}$/.test(a.call || '')) { put('call', hmToSerial(a.call)); put('disp', a.disp); }
     put('notes', [a.by || 'Added in the Texts panel', a.notes].filter(Boolean).join(' — '));
-    const timeFmt = { ts: 'm/d/yyyy h:mm', date: 'm/d/yyyy', stime: 'h:mm AM/PM', call: 'h:mm' };
+    const timeFmt = { ts: 'm/d/yyyy h:mm', date: 'm/d/yyyy', call: 'h:mm' };
     const row = await Excel.run(async ctx => {
       const ws = await sheetOf(ctx, true);
       let row = (lastRide || Math.max(1, X.lastRow)) + 1;
