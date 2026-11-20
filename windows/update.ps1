@@ -1,8 +1,9 @@
 # SURE Walk Texts for Windows: updates from GitHub Releases (leeisaac991/surewalk-texts-windows).
 #   update.ps1          check, and if there's a newer release: download it, check its SHA-256, install it in place
 #   update.ps1 -Check   used at start: quietly check; if newer, ask in a popup (no answer in 30 s = not now)
+#   update.ps1 -Check -Yes   the dashboard's "Update now": the same, without asking (the dashboard already asked)
 # Only published releases are offered, never work in progress. Settings and the message log are never touched.
-param([switch]$Check)
+param([switch]$Check, [switch]$Yes)
 $ErrorActionPreference = 'Stop'
 $Repo = 'leeisaac991/surewalk-texts-windows'
 $Asset = 'SURE-Walk-Texts-Windows.zip'
@@ -25,7 +26,7 @@ catch { if ($Check) { exit 0 }; "Could not reach GitHub to check for updates: $(
 $new = ([string]$rel.tag_name) -replace '^v', ''
 if (-not (Newer $new $cur)) { if (-not $Check) { "You have the latest version ($cur)." }; exit 0 }
 
-if ($Check) {
+if ($Check -and -not $Yes) {
   $sh = New-Object -ComObject WScript.Shell
   $ans = $sh.Popup("SURE Walk Texts $new is available (you have $cur).`n`nInstall it now? Texting restarts for a few seconds.", 30, 'SURE Walk Texts update', 4 + 32)
   if ($ans -ne 6) { exit 0 }
@@ -49,5 +50,5 @@ try {
   $inst = Join-Path $tmp 'SURE-Walk-Texts-Windows\app\windows\install.ps1'
   & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $inst -Quiet -Dest $Root
   if ($LASTEXITCODE) { 'The update did not finish - see above.'; exit 1 }
-  if ($Check) { (New-Object -ComObject WScript.Shell).Popup("SURE Walk Texts $new is installed.", 10, 'SURE Walk Texts update', 64) | Out-Null }
+  if ($Check -and -not $Yes) { (New-Object -ComObject WScript.Shell).Popup("SURE Walk Texts $new is installed.", 10, 'SURE Walk Texts update', 64) | Out-Null }
 } finally { Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $tmp }

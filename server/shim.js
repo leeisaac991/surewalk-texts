@@ -194,6 +194,65 @@
     document.body.insertBefore(b, document.body.firstChild);
     if (!/^\[Linux/.test(document.title)) document.title = '[Linux – deprecated] ' + document.title;
   }
-  function tick() { legacy(); addButton(); pill(); post('/api/status').then(watchAdds).catch(function () {}); }
-  document.addEventListener('DOMContentLoaded', function () { tick(); setInterval(tick, 5000); });
+  // ⬆ A newer SURE Walk Texts on GitHub: an "Update" pill in the top bar and, once per version, a popup. Update now =
+  // the laptop installs it and restarts texting by itself (about a minute); this page reloads when it's back.
+  window.SW_APP_VERSION = '__APPVER__';
+  var updInfo = null, updAsked = {};
+  try { updAsked = JSON.parse(sessionStorage.getItem('swUpdAsked') || '{}'); } catch (e) {}
+  function updCheck(force) {
+    post('/api/update', { force: !!force }).then(function (u) { updInfo = u; updPill(); if (u.newer && !updAsked[u.latest]) updPopup(); }).catch(function () {});
+  }
+  function updPill() {
+    var top = document.querySelector('.top'), b = document.getElementById('swUpd');
+    if (!top || !updInfo || !updInfo.newer) { if (b) b.remove(); return; }
+    if (!b) {
+      b = document.createElement('button');
+      b.id = 'swUpd'; b.type = 'button'; b.className = 'pill';
+      b.style.cssText = 'background:var(--accent);color:#fff;font-weight:700';
+      b.onclick = updPopup;
+      var gm = document.getElementById('swGm');
+      if (gm && gm.parentNode === top) top.insertBefore(b, gm.nextSibling); else top.appendChild(b);
+    }
+    b.textContent = '⬆ Update';
+    b.title = 'SURE Walk Texts ' + updInfo.latest + ' is out (you have ' + updInfo.current + '). Click to install it.';
+  }
+  function updEl(tag, css, text) { var e = document.createElement(tag); if (css) e.style.cssText = css; if (text != null) e.textContent = text; return e; }
+  function updPopup() {
+    if (!updInfo || !updInfo.newer || document.getElementById('swUpdSheet')) return;
+    updAsked[updInfo.latest] = 1; try { sessionStorage.setItem('swUpdAsked', JSON.stringify(updAsked)); } catch (e) {}
+    var bg = updEl('div', 'position:fixed;inset:0;z-index:9500;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,.45)');
+    bg.id = 'swUpdSheet';
+    var box = updEl('div', 'width:min(440px,100%);background:var(--card,#fff);color:var(--text,#000);border-radius:14px;padding:18px 20px;box-shadow:0 10px 40px rgba(0,0,0,.35);font:15px/1.4 system-ui,sans-serif');
+    box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true');
+    box.appendChild(updEl('div', 'font-size:18px;font-weight:700;margin-bottom:6px', '⬆ A new version is available'));
+    box.appendChild(updEl('div', '', 'SURE Walk Texts ' + updInfo.latest + ' (you have ' + updInfo.current + ').'));
+    if (updInfo.notes) box.appendChild(updEl('div', 'margin-top:8px;padding:8px 10px;border-radius:9px;background:var(--fill,#eee);font-size:13px;white-space:pre-wrap;max-height:140px;overflow:auto', updInfo.notes));
+    box.appendChild(updEl('div', 'margin-top:8px;font-size:13px;color:var(--muted,#888)', 'Texting stops for about a minute while it installs, then starts again by itself (texts waiting to send are kept). This page reloads when it\'s back.'));
+    var row = updEl('div', 'display:flex;gap:8px;justify-content:flex-end;margin-top:14px');
+    var later = updEl('button', 'border:0;border-radius:9px;padding:8px 14px;font:inherit;font-weight:600;cursor:pointer;background:var(--fill,#eee);color:var(--text,#000)', 'Later');
+    var go = updEl('button', 'border:0;border-radius:9px;padding:8px 14px;font:inherit;font-weight:700;cursor:pointer;background:var(--accent,#bf5700);color:#fff', 'Update now');
+    later.onclick = function () { bg.remove(); };
+    go.onclick = function () { go.disabled = later.disabled = true; go.textContent = 'Starting…'; updInstall(box); };
+    row.appendChild(later); row.appendChild(go); box.appendChild(row); bg.appendChild(box);
+    bg.addEventListener('click', function (e) { if (e.target === bg && !go.disabled) bg.remove(); });
+    document.body.appendChild(bg);
+  }
+  function updInstall(box) {
+    post('/api/update', { action: 'install' }).then(function (u) {
+      if (!u.ok) { box.appendChild(updEl('div', 'margin-top:10px;color:var(--red,#d32f2f);font-weight:600', u.error || 'The update could not start.')); return; }
+      while (box.firstChild) box.removeChild(box.firstChild);
+      box.appendChild(updEl('div', 'font-size:18px;font-weight:700;margin-bottom:6px', '⬆ Updating to ' + u.latest + '…'));
+      var msg = updEl('div', '', 'Installing. Texting restarts by itself; this page reloads when it\'s back. Don\'t close the laptop.');
+      box.appendChild(msg);
+      var went = false, t0 = Date.now();
+      var iv = setInterval(function () { // wait for the server to go away and come back, then reload
+        fetch('/favicon.svg', { cache: 'no-store' }).then(function (r) {
+          if (r.ok && (went || Date.now() - t0 > 150e3)) { clearInterval(iv); location.reload(); }
+        }, function () { went = true; msg.textContent = 'Installing… texting is restarting (about a minute).'; });
+        if (Date.now() - t0 > 300e3) { clearInterval(iv); msg.textContent = 'This is taking long. If texting doesn\'t come back, open "SURE Walk Texts" from the Start menu.'; }
+      }, 2000);
+    }).catch(function (e) { box.appendChild(updEl('div', 'margin-top:10px;color:var(--red,#d32f2f);font-weight:600', (e && e.message) || 'The update could not start.')); });
+  }
+  function tick() { legacy(); addButton(); pill(); updPill(); post('/api/status').then(watchAdds).catch(function () {}); }
+  document.addEventListener('DOMContentLoaded', function () { tick(); setInterval(tick, 5000); updCheck(); setInterval(function () { updCheck(); }, 15 * 60e3); });
 })();

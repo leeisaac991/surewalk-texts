@@ -381,8 +381,42 @@ const send = (res, code, body, type = 'application/json; charset=utf-8', extra =
 
 const FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#bf5700"/><path d="M7 9.5C7 8.12 8.12 7 9.5 7h13c1.38 0 2.5 1.12 2.5 2.5v9c0 1.38-1.12 2.5-2.5 2.5H13l-4.5 3.5v-3.5H9.5C8.12 21 7 19.88 7 18.5v-9z" fill="#ffffff"/><circle cx="11.5" cy="14" r="1.5" fill="#bf5700"/><circle cx="16" cy="14" r="1.5" fill="#bf5700"/><circle cx="20.5" cy="14" r="1.5" fill="#bf5700"/></svg>`;
 
+// ⬆ Updates from the dashboard (Windows): this install's VERSION vs. the latest GitHub release, and "Update now" runs the
+// same updater as the Start-menu "Check for updates" (app/windows/update.ps1), which stops texting, installs in place
+// (settings and the message log are kept) and starts texting again; the page reloads when the server is back.
+const ROOT = path.resolve(HERE, '..', '..', '..'); // <install>\app\texts-panel\server -> <install>
+const UPDATER = path.join(ROOT, 'app', 'windows', 'update.ps1');
+const UPDATE_REPO = 'leeisaac991/surewalk-texts-windows';
+const appVersion = () => { try { return fs.readFileSync(path.join(ROOT, 'VERSION'), 'utf8').trim(); } catch (e) { return ''; } };
+const verNewer = (a, b) => { // is version a newer than b? (2026.11.19 / 2026.11.19.4)
+  const x = String(a).split('.').map(n => Number(String(n).replace(/\D/g, '')) || 0), y = String(b).split('.').map(n => Number(String(n).replace(/\D/g, '')) || 0);
+  for (let i = 0; i < Math.max(x.length, y.length); i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0);
+  return false;
+};
+let upd = { at: 0, latest: '', notes: '', err: '' }, updating = 0;
+async function updateInfo(force) {
+  const current = appVersion(), supported = WIN && fs.existsSync(UPDATER) && !!current;
+  if (!supported) return { supported, current, latest: '', newer: false, notes: '', error: '', updating: false }; // (no GitHub call)
+  if (force || Date.now() - upd.at > 10 * 60e3) {
+    try {
+      const r = await fetch(`https://api.github.com/repos/${UPDATE_REPO}/releases/latest`, { headers: { 'User-Agent': 'surewalk-texts-updater', Accept: 'application/vnd.github+json' }, signal: AbortSignal.timeout(15000) });
+      if (!r.ok) throw new Error('GitHub answered ' + r.status);
+      const j = await r.json();
+      upd = { at: Date.now(), latest: String(j.tag_name || '').replace(/^v/, ''), notes: String(j.body || '').slice(0, 600), err: '' };
+    } catch (e) { upd = Object.assign({}, upd, { at: Date.now(), err: String((e && e.message) || e) }); }
+  }
+  return { supported, current, latest: upd.latest, newer: !!upd.latest && verNewer(upd.latest, current), notes: upd.notes, error: upd.err, updating: !!updating };
+}
+function startUpdate() {
+  // A separate, hidden PowerShell: it outlives this server (the updater stops it) and starts texting again when done.
+  const ps = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  spawn(ps, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', UPDATER, '-Check', '-Yes'], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+  updating = Date.now();
+}
+
 function dashboardHtml() {
-  const shim = fs.readFileSync(path.join(HERE, 'shim.js'), 'utf8').replace('__TOKEN__', TOKEN).replace("'__LEGACY__'", WIN ? 'false' : 'true');
+  const shim = fs.readFileSync(path.join(HERE, 'shim.js'), 'utf8').replace('__TOKEN__', TOKEN).replace("'__LEGACY__'", WIN ? 'false' : 'true')
+    .replace("'__APPVER__'", JSON.stringify(appVersion()));
   return fs.readFileSync(path.join(GS, 'Dashboard.html'), 'utf8')
     .replace(/<base[^>]*>/i, '')
     .replace(/https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec/g, '/')
@@ -498,6 +532,14 @@ const server = http.createServer(async (req, res) => {
         catch (e) { return send(res, 200, { ok: false, error: String((e && e.message) || e) }); }
       }
       if (p === '/api/status') return send(res, 200, status());
+      if (p === '/api/update') {
+        const info = await updateInfo(!!body.force);
+        if (body.action !== 'install') return send(res, 200, info);
+        if (!info.supported) return send(res, 200, Object.assign(info, { ok: false, error: 'Updates from the dashboard work on the Windows laptop only.' }));
+        if (!info.newer) return send(res, 200, Object.assign(info, { ok: false, error: `You already have the latest version (${info.current}).` }));
+        if (!updating) startUpdate();
+        return send(res, 200, Object.assign(info, { ok: true, updating: true }));
+      }
       if (p === '/api/lookupRider') return send(res, 200, lookupRider(body || {}));
       if (p === '/api/addRide') return send(res, 200, requestAdd(body || {}));
       if (p === '/api/groups') { // check a token and list its chats
