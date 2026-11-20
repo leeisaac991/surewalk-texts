@@ -401,6 +401,13 @@ if (jrow) {
 }
 await until(async () => { const s = await (await fetch(`http://127.0.0.1:${SPORT}/api/status`, { method: 'POST', headers: { 'X-SW-Token': TOKEN } })).json(); return (s.adds || []).some(a => a.id === ja.id && a.state === 'added' && +a.row === jrow); }, 'server status: the add shows as added, with its row');
 console.log('＋ Ride phone lookup on the dashboard');
+{ // ⬆ dashboard updates: Windows only (here: off, and no GitHub call); the page carries the Update button code
+  const up = async b => (await fetch(`http://127.0.0.1:${SPORT}/api/update`, { method: 'POST', headers: { 'X-SW-Token': TOKEN, 'Content-Type': 'application/json' }, body: JSON.stringify(b) })).json();
+  const u1 = await up({}), u2 = await up({ action: 'install' });
+  ok(u1.supported === false && u1.newer === false && u2.ok === false && /Windows laptop only/.test(u2.error), 'update check: off on this computer, "Update now" refused: ' + JSON.stringify(u2));
+  const page = await (await fetch(`http://127.0.0.1:${SPORT}/`)).text();
+  ok(/swUpd/.test(page) && /SW_APP_VERSION = "/.test(page), 'dashboard page has the ⬆ Update pill code and the app version');
+}
 const lookupApi = async b => (await fetch(`http://127.0.0.1:${SPORT}/api/lookupRider`, { method: 'POST', headers: { 'X-SW-Token': TOKEN, 'Content-Type': 'application/json' }, body: JSON.stringify(b) })).json();
 const lk = await until(async () => { const r = await lookupApi({ phone: '(512) 555-0170' }); return r.rides ? r : null; }, 'lookup finds Jo by a formatted phone');
 ok(lk && lk.names.length === 1 && lk.names[0].first === 'Jo' && lk.names[0].last === 'Desk' && lk.names[0].count === 1, 'lookup: one name, Jo Desk, 1 ride');
@@ -488,13 +495,16 @@ console.log('👥 group rides by text: same pickup soon after each other -> aske
   ok(ol.length === 1 && /Going with friends\?/.test(ol[0]) && !/Max|Nia/.test(ol[0]), 'Oli (same pickup, other drop-off) gets the softer hint');
   const mx2 = await say(P.max, 'nia');
   ok(mx2.length === 1 && /you and Nia/.test(mx2[0]), 'Max answers "nia": grouped, told "you and Nia"');
+  const nia1 = take(P.nia);
+  ok(nia1.length === 1 && /you're confirmed/i.test(nia1[0]) && !/Max/.test(nia1[0]), 'Nia (texted, no answer yet) is confirmed by her group: one "you\'re confirmed" text, no names: ' + JSON.stringify(nia1));
   let st = await rpc('getState');
+  ok((st.rides.find(r => r.phone10 === P.nia) || {}).state === 'confirmed', 'dashboard: Nia is confirmed');
   const g1 = (st.rides.find(r => r.phone10 === P.max) || {}).group;
   ok(g1 && g1.members.length === 2 && !g1.both && g1.members.some(m => m.first === 'Nia'), 'dashboard: Max is grouped with Nia, one side so far');
   const mrow = top, nrow = top + 1;
-  const L1 = C.txs ? await until(() => B.js(`(() => { const a = __xl.text(${mrow},'${C.txs}'), b = __xl.text(${nrow},'${C.txs}'); const m = /^\\d{1,2}:\\d{2} · Group ([A-H])$/.exec(a); return m && b === 'Group ' + m[1] && m[1]; })()`), 'Confirmed column: Max "H:MM · Group X", Nia (not confirmed yet) "Group X"') : 'x';
+  const L1 = C.txs ? await until(() => B.js(`(() => { const a = __xl.text(${mrow},'${C.txs}'), b = __xl.text(${nrow},'${C.txs}'); const m = /^\\d{1,2}:\\d{2} · Group ([A-H])$/.exec(a); return m && (b === 'Group ' + m[1] || b.endsWith(' · Group ' + m[1])) && m[1]; })()`), 'Confirmed column: Max "H:MM · Group X", Nia "(H:MM · )Group X"') : 'x';
   const ni = await say(P.nia, "Okay - I'm with Max");
-  ok(ni.length === 1 && /you're confirmed/i.test(ni[0]) && /you and Max/.test(ni[0]), 'Nia: "Okay - I\'m with Max" = a YES; one text, confirmed + grouped');
+  ok(ni.length === 1 && /you and Max/.test(ni[0]), 'Nia (already confirmed by her group): "Okay - I\'m with Max": one text, "you and Max": ' + JSON.stringify(ni));
   st = await rpc('getState');
   const g2 = (st.rides.find(r => r.phone10 === P.nia) || {}).group;
   ok(g2 && g2.both && g2.letter && (!C.txs || g2.letter === L1), `dashboard: they named each other (Group ${g2 && g2.letter})`);
@@ -504,6 +514,24 @@ console.log('👥 group rides by text: same pickup soon after each other -> aske
   st = await rpc('getState');
   ok(o2.length === 0 && !st.flags.some(f => f.phone === P.oli), 'Oli: "no just me" = riding alone: no "reply CANCEL" text, no flag');
   ok(!(st.rides.find(r => r.phone10 === P.oli) || {}).group && (st.rides.find(r => r.phone10 === P.oli) || {}).state === 'confirmed', 'Oli stays confirmed and ungrouped');
+  // "YES" twice in a row (one batch): the second is not an answer to the "Going with friends?" their first YES got
+  {
+    const D = { una: '5125550185', wes: '5125550186' }, dtop = top + 5;
+    await B.js(`__xl.row(${dtop}, ${JSON.stringify(ride(45, 0, 'Una', 'Grp', D.una, 'Jester', 'Kins'))})`);
+    await B.js(`__xl.row(${dtop + 1}, ${JSON.stringify(ride(46, 0, 'Wes', 'Grp', D.wes, 'Jester', 'PCL'))})`);
+    await until(async () => { await pump(); return Object.values(D).every(k => (got[k] || []).length); }, 'Una and Wes get their confirmation texts');
+    Object.values(D).forEach(take);
+    await pump([{ id: 'dy1' + ts, from: '+1' + D.wes, text: 'YES', ts: ts += 1000 }, { id: 'dy2' + ts, from: '+1' + D.wes, text: 'YES', ts: ts += 500 }]);
+    await sleep(300); await pump();
+    const wes = take(D.wes);
+    st = await rpc('getState');
+    ok(wes.length === 1 && /you're confirmed/i.test(wes[0]), 'Wes says YES YES: one "you\'re confirmed" text');
+    ok(!st.flags.some(f => f.phone === D.wes), 'Wes: no "Group?" flag from the second YES');
+    ok(!(st.msgs || []).some(m => m.phone === D.wes && m.intent === 'group'), 'Wes: the second YES is not read as a group answer');
+    const wes2 = await say(D.wes, 'ok');
+    st = await rpc('getState');
+    ok(!st.flags.some(f => f.phone === D.wes && f.kind === 'Group?') && !(st.rides.find(r => r.phone10 === D.wes) || {}).group && !wes2.some(x => /you and/.test(x)), 'Wes: a bare "ok" after the softer hint is not a group answer (no group, no "Group?" flag): ' + JSON.stringify(wes2));
+  }
   // names that don't fit -> a "Group?" flag for the dispatcher, nobody grouped
   const Q = { quinn: '5125550193', rae: '5125550194' }, qtop = top + 3;
   await B.js(`__xl.row(${qtop}, ${JSON.stringify(ride(43, 0, 'Quinn', 'Grp', Q.quinn, 'Gregory Gym', 'Kins'))})`);

@@ -23,6 +23,14 @@ done
 [ -f "$D/app/apps-script/Code.gs" ] || { echo "No Code.gs in $GS (set SUREWALK_GS)"; exit 1; }
 # The old Google web-app address in the dashboard: the local server serves it at / anyway; keep it out of copies.
 sed -i -E 's#https://script\.google\.com/macros/s/[A-Za-z0-9_-]+/exec#/#g' "$D/app/apps-script/Dashboard.html"
+# Every .gs file and every <script> in the pages must parse: one stray quote stops the whole dashboard from loading
+# (2026.11.19.2/.3 shipped with an unescaped "it's" and the page never started).
+for f in "$D"/app/apps-script/*.gs; do node --check --input-type=commonjs < "$f" 2>/dev/null || node -e 'new Function(require("fs").readFileSync(process.argv[1], "utf8"))' "$f" || { echo "Syntax error in $f"; exit 1; }; done
+for f in "$D"/app/apps-script/*.html; do
+  node -e '
+    const t = require("fs").readFileSync(process.argv[1], "utf8"), re = /<script>([\s\S]*?)<\/script>/g; let m, i = 0;
+    while ((m = re.exec(t))) { i++; try { new Function(m[1]); } catch (e) { console.error(`Syntax error in ${process.argv[1]}, <script> #${i}: ${e.message}`); process.exit(1); } }' "$f" || exit 1
+done
 
 if [ -n "${NODE_ZIP:-}" ]; then cp "$NODE_ZIP" "$D/"
 else
