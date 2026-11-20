@@ -70,8 +70,8 @@
   var FIELDS = ['swaFirst', 'swaLast', 'swaPhone', 'swaEid', 'swaEmail', 'swaPu', 'swaDo', 'swaNotes'];
   function val(i) { var el = document.getElementById(i); return el ? el.value.trim() : ''; }
   // Phone lookup (＋ Ride): a 10-digit phone (any format) finds the number's past rides. "Is this…?" lists every name
-  // it used (newest first); picking one fills name, EID, email and ADA, tagged "from past ride". Recent trips fill
-  // Pick-up / Drop-off only when clicked. "Someone else" undoes the fill. Read only: nothing is written or logged.
+  // it used (newest first); picking one fills first and last name only (not EID, email, pickup or drop-off).
+  // "Someone else" undoes the fill. Read only: nothing is written or logged.
   function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function phone10(v) { var d = String(v || '').replace(/\D/g, ''); if (d.length === 11 && d.charAt(0) === '1') d = d.slice(1); return d.length === 10 ? d : ''; }
   var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -91,7 +91,7 @@
     var ph = document.getElementById('swaPhone'), box = document.getElementById('swaPrior');
     if (!ph || !box) return;
     var timer = null, slow = null, seq = 0, data = null, filled = {};
-    var FILL = { first: 'swaFirst', last: 'swaLast', eid: 'swaEid', email: 'swaEmail', ada: 'swaAda' };
+    var FILL = { first: 'swaFirst', last: 'swaLast' };
     function tag(id, on) {
       var el = document.getElementById(id), lab = el && el.closest('label'); if (!lab) return;
       var t = lab.querySelector('.swa-tag');
@@ -104,9 +104,6 @@
     function pickName(i) {
       var n = data.names[i]; clearFill();
       set(FILL.first, n.first); set(FILL.last, n.last);
-      if (n.eid || data.eid) set(FILL.eid, n.eid || data.eid);
-      if (n.email || data.email) set(FILL.email, n.email || data.email);
-      if (data.ada) set(FILL.ada, 'Yes');
       box.querySelectorAll('[data-name]').forEach(function (b) { b.classList.toggle('on', +b.dataset.name === i); });
       var adaNote = document.getElementById('swaAdaNote'); if (adaNote) adaNote.hidden = !data.ada;
     }
@@ -121,12 +118,9 @@
           return '<button type="button" data-name="' + i + '" title="Last used ' + esc(shortDate(n.lastDate)) + '">' + esc((n.first + ' ' + n.last).trim()) + ' · ' + n.count + '×</button>'; }).join('') +
           '<button type="button" id="swaElse">Someone else</button></div>' : '') +
         '<div id="swaAdaNote" class="swa-quiet" hidden>Was ADA before, check with them.</div>' +
-        (data.routes.length ? '<div class="swa-row"><span class="lbl">Recent trips</span>' + data.routes.map(function (t, i) {
-          return '<button type="button" data-trip="' + i + '" title="Fill Pick-up and Drop-off">' + esc(t.pu) + ' → ' + esc(t.do) + ' · ' + t.count + '×</button>'; }).join('') + '</div>' : '') +
         warn.map(function (w) { return '<div class="swa-warn">' + esc(w) + '</div>'; }).join('') + '</div>';
       box.hidden = false;
       box.querySelectorAll('[data-name]').forEach(function (b) { b.onclick = function () { pickName(+b.dataset.name); }; });
-      box.querySelectorAll('[data-trip]').forEach(function (b) { b.onclick = function () { var t = data.routes[+b.dataset.trip]; set('swaPu', t.pu); set('swaDo', t.do); }; });
       var other = document.getElementById('swaElse'); if (other) other.onclick = function () { clearFill(); data = null; box.hidden = true; box.innerHTML = ''; };
     }
     function run() {
