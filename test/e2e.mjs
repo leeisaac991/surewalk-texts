@@ -546,7 +546,8 @@ console.log('📍 drop-off check: residence / campus building? (safe list, remem
   const dec = await rpc('getDropDecisions');
   ok(dec.length === 1 && dec[0].ok === false && /Pluckers/.test(dec[0].text) && !JSON.stringify(dec).match(/Vic|5550196/), 'the decision is remembered (place only — no name or phone): ' + JSON.stringify(dec));
   const props = JSON.parse(fs.readFileSync(path.join(TMP, 'state', 'props.json'), 'utf8'));
-  ok(JSON.stringify(props).includes('DROP_DECISIONS'), 'stored in DROP_DECISIONS on this computer');
+  const rep = await rpc('exportPlaceReports');
+  ok(JSON.stringify(props).includes('PLACE_REPORTS') && rep.length === 1 && rep[0].kind === 'dropoff' && rep[0].verdict === 'invalid' && !JSON.stringify(rep).match(/Vic|5550196/), 'stored in PLACE_REPORTS on this computer (place only): ' + JSON.stringify(rep));
   // another rider to the same place, spelled differently: held, not texted, cancel text ready
   await B.js(`__xl.row(${top + 3}, ${JSON.stringify(ride(53, 0, 'Xan', 'Drop', P.again, 'FAC', 'pluckers wing bar.'))})`);
   await until(async () => { await pump(); st = await rpc('getState'); return by(P.again).id; }, 'the next ride to that place is seen');
