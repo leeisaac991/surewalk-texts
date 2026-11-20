@@ -141,7 +141,7 @@ function server() {
 
 gm.listen(GPORT, '127.0.0.1');
 const S = server();
-await sleep(1500);
+for (let t0 = Date.now(); Date.now() - t0 < 15000; await sleep(200)) { try { await fetch(`http://127.0.0.1:${SPORT}/`); break; } catch (e) { /* still starting */ } }
 const page = await (await fetch(`http://127.0.0.1:${SPORT}/`)).text();
 const TOKEN = /var TOKEN = '([a-f0-9]+)'/.exec(page)[1];
 const rpc = async (fn, ...args) => { const r = await (await fetch(`http://127.0.0.1:${SPORT}/rpc`, { method: 'POST', headers: { 'X-SW-Token': TOKEN, 'Content-Type': 'application/json' }, body: JSON.stringify({ fn, args }) })).json(); if (!r.ok) throw new Error(r.error); return r.result; };
@@ -522,6 +522,43 @@ console.log('👥 group rides by text: same pickup soon after each other -> aske
     await B.js(`__xl.type(${mrow}, '${C.txs}', '')`); await sleep(2500); await pump(); await sleep(1500);
     ok(await B.js(`/^\\d{1,2}:\\d{2}$/.test(__xl.text(${mrow},'${C.txs}'))`), 'the group letter is written once: a dispatcher\'s change in the sheet stands (only the YES time comes back)');
   }
+}
+
+console.log('📍 drop-off check: residence / campus building? (safe list, remembered ✓ Valid / ✗ Not valid)');
+{
+  const P = { val: '5125550195', unk: '5125550196', again: '5125550197', addr: '5125550198' };
+  const top = (await B.js(`Math.max(...SWT.X.rides.map(r => r.row))`)) + 1;
+  await B.js(`__xl.row(${top}, ${JSON.stringify(ride(50, 0, 'Uma', 'Drop', P.val, 'PCL', 'The Eastwood'))})`); // on the safe list (old sheets)
+  await B.js(`__xl.row(${top + 1}, ${JSON.stringify(ride(51, 0, 'Vic', 'Drop', P.unk, 'PCL', 'Pluckers Wing Bar'))})`); // not on it
+  await B.js(`__xl.row(${top + 2}, ${JSON.stringify(ride(52, 0, 'Wes', 'Drop', P.addr, 'PCL', '2410 Leon St'))})`); // a street address near campus
+  const got = {};
+  const pump = async () => { const r = await bridge(); const out = r.outbox || []; out.forEach(o => { const k = o.to.slice(-10); (got[k] = got[k] || []).push(o.body); }); if (out.length) await bridge([], out.map(o => ({ outId: o.outId, status: 'sent' }))); return out; };
+  await until(async () => { await pump(); return [P.val, P.unk, P.addr].every(k => (got[k] || []).length); }, 'Uma (safe list), Vic (unknown drop-off) and Wes (address) all get the normal confirmation');
+  let st = await rpc('getState');
+  const by = k => st.rides.find(r => r.phone10 === k) || {};
+  ok(by(P.val).drop === '' && by(P.addr).drop === '' && !st.flags.some(f => [P.val, P.addr].includes(f.phone) && /drop-off/i.test(f.kind)), 'safe-list place and near-campus address: no drop-off flag');
+  ok(by(P.unk).drop === 'unknown' && st.flags.some(f => f.kind === 'Drop-off?' && f.phone === P.unk && /Pluckers/.test(f.note)), 'unknown drop-off: "Drop-off?" flag for the dispatcher, ride still texted');
+  ok(/Reply YES/i.test((got[P.unk] || [])[0] || ''), 'the rider with the unknown drop-off got the usual confirmation');
+  ok(st.templates.cx_notres && /residence/.test(st.templates.cx_notres) && st.cancelNotices.some(c => c.key === 'cx_notres'), 'the "not a residence / campus building" cancel text is an editable template');
+  st = await rpc('markDropoff', by(P.unk).id, false);
+  ok(by(P.unk).drop === 'invalid' && !st.flags.some(f => f.kind === 'Drop-off?' && f.phone === P.unk) && st.flags.some(f => f.kind === 'Not a valid drop-off' && f.phone === P.unk), '✗ Not valid: the ride shows ✗ Drop-off with the cancel text offered');
+  ok(by(P.unk).state !== 'flagged', 'a rider already texted keeps their ride until the dispatcher cancels it');
+  const dec = await rpc('getDropDecisions');
+  ok(dec.length === 1 && dec[0].ok === false && /Pluckers/.test(dec[0].text) && !JSON.stringify(dec).match(/Vic|5550196/), 'the decision is remembered (place only — no name or phone): ' + JSON.stringify(dec));
+  const props = JSON.parse(fs.readFileSync(path.join(TMP, 'state', 'props.json'), 'utf8'));
+  ok(JSON.stringify(props).includes('DROP_DECISIONS'), 'stored in DROP_DECISIONS on this computer');
+  // another rider to the same place, spelled differently: held, not texted, cancel text ready
+  await B.js(`__xl.row(${top + 3}, ${JSON.stringify(ride(53, 0, 'Xan', 'Drop', P.again, 'FAC', 'pluckers wing bar.'))})`);
+  await until(async () => { await pump(); st = await rpc('getState'); return by(P.again).id; }, 'the next ride to that place is seen');
+  await sleep(1500); await pump(); st = await rpc('getState');
+  ok(!(got[P.again] || []).length && by(P.again).state === 'flagged' && by(P.again).invalid === 'cx_notres' && st.flags.some(f => f.kind === 'Not a valid drop-off' && f.phone === P.again), 'marked not valid before: the next ride there is held, not texted, cancel text ready');
+  // the dispatcher changes their mind: ✓ Valid frees the held ride and clears every drop-off flag for the place
+  st = await rpc('markDropoff', by(P.again).id, true);
+  ok(by(P.again).state === 'ready' && !by(P.again).invalid && by(P.again).drop === '' && by(P.unk).drop === '' && !st.flags.some(f => /drop-off/i.test(f.kind) && [P.unk, P.again].includes(f.phone)), '✓ Valid: held ride back to "not texted", flags gone for both rides');
+  ok((await rpc('getDropDecisions'))[0].ok === true, '✓ Valid is remembered');
+  st = await rpc('forgetDropoff', (await rpc('getDropDecisions'))[0].key);
+  ok((await rpc('getDropDecisions')).length === 0 && by(P.unk).drop === 'unknown' && st.flags.some(f => f.kind === 'Drop-off?' && f.phone === P.unk), 'Forget: asked again');
+  ok(page.includes('markDropoff') && page.includes('? Drop-off'), 'dashboard has the ? Drop-off chip and ✓ Valid / ✗ Not valid buttons');
 }
 
 console.log('Calling in its own window (Excel dialog stand-in): the side panel does the sheet work');
